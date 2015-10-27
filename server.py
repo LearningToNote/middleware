@@ -40,7 +40,13 @@ def get_documents():
 
 @app.route('/documents/<id>')
 def get_document(id):
-    pass
+    cursor = connection.cursor()
+    cursor.execute("SELECT TEXT FROM MP12015.SENTENCE WHERE DOCUMENT_ID = ?", (id,))
+    sentences = list()
+    for result in cursor.fetchall():
+        sentences.append(str(result[0]))
+    cursor.close()
+    return " ".join(sentences)
 
 
 if __name__ == '__main__':
