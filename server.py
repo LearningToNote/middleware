@@ -1,6 +1,6 @@
 import json, pyhdb, os
 
-from flask import Flask
+from flask import Flask, jsonify, Response
 from flask.ext.cors import CORS
 
 
@@ -34,8 +34,7 @@ def get_documents():
     for result in cursor.fetchall():
         documents.append(result[0])
     cursor.close()
-    return json.dumps(documents)
-
+    return respond_with(documents)
 
 
 @app.route('/documents/<id>')
@@ -46,8 +45,46 @@ def get_document(id):
     for result in cursor.fetchall():
         sentences.append(str(result[0]))
     cursor.close()
-    return " ".join(sentences)
+    return respond_with(" ".join(sentences))
 
+
+@app.route('/sentences')
+def get_sentences():
+    cursor = connection.cursor()
+    cursor.execute("SELECT * FROM MP12015.SENTENCE")
+    sentences = list()
+    for result in cursor.fetchall():
+        sentences.append(result[0])
+    cursor.close()
+    return respond_with(sentences)
+
+
+@app.route('/sentences/<sentence_id>')
+def get_sentence(sentence_id):
+    cursor = connection.cursor()
+    cursor.execute("SELECT TEXT FROM MP12015.SENTENCE WHERE SENTENCE.ID = ?", (sentence_id,))
+    sentence = cursor.fetchone()[0]
+    cursor.close()
+    return respond_with(str(sentence))
+
+@app.route('/sentences/<sentence_id>/entities')
+def get_sentence_entities(sentence_id):
+    cursor = connection.cursor()
+    cursor.execute(
+    'SELECT ENTITY.TEXT, OFFSET."START", OFFSET."END" '
+    'FROM MP12015.ENTITY, MP12015.OFFSET '
+    'WHERE ENTITY.ID = OFFSET.ENTITY_ID '
+    'AND ENTITY.SENTENCE_ID = ?', (sentence_id,))
+
+    entities = list()
+    for result in cursor.fetchall():
+        entities.append({"span":{"begin":result[1],"end":result[2]},"obj":result[0]})
+
+    cursor.close()
+    return respond_with(entities)
+
+def respond_with(response):
+    return Response(json.dumps(response), mimetype='application/json')
 
 if __name__ == '__main__':
     init()
