@@ -44,6 +44,7 @@ def get_document(document_id):
     result['text'] = get_text(cursor, document_id)
     result['denotations'] = get_denotations(cursor, document_id)
     result['relations'] = get_relations(cursor, document_id)
+    result['sourceid'] = document_id
     cursor.close()
     return respond_with(result)
 
