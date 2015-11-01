@@ -1,10 +1,14 @@
-import json, pyhdb, os
+import json, pyhdb, os, sys
 
 from flask import Flask, jsonify, Response
 from flask.ext.cors import CORS
 
 
-app = Flask(__name__)
+static_folder = "static"
+if len(sys.argv) >= 2:
+    static_folder = sys.argv[1]
+
+app = Flask(__name__, static_folder=static_folder)
 CORS(app)
 
 SERVER_ROOT = os.path.dirname(os.path.realpath(__file__))
