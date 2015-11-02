@@ -9,7 +9,7 @@ if len(sys.argv) >= 2:
     static_folder = sys.argv[1]
 
 app = Flask(__name__, static_folder=static_folder)
-CORS(app)
+CORS(app, supports_credentials=True)
 
 SERVER_ROOT = os.path.dirname(os.path.realpath(__file__))
 connection = None
