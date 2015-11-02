@@ -1,6 +1,6 @@
 import json, pyhdb, os, sys
 
-from flask import Flask, jsonify, Response
+from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
 
 
@@ -41,8 +41,18 @@ def get_documents():
     return respond_with(documents)
 
 
-@app.route('/documents/<document_id>')
+@app.route('/documents/<document_id>', methods=['GET', 'POST'])
 def get_document(document_id):
+    if request.method == 'GET':
+        return load_document(document_id)
+    else:
+        save_document(document_id, request.get_json())
+        return ""
+
+def save_document(document_id, data):
+    print "Received so much stuff: " + str(data)
+
+def load_document(document_id):
     cursor = connection.cursor()
     result = {}
     result['text'] = get_text(cursor, document_id)
@@ -74,8 +84,8 @@ def get_denotations(cursor, document_id):
 
 def get_relations(cursor, document_id):
     cursor.execute("SELECT PAIRS.ID, E1_ID, E2_ID, TYPE, DDI FROM LEARNING_TO_NOTE.PAIRS \
-        JOIN LEARNING_TO_NOTE.DOC_ENTITIES DE1 ON PAIRS.E1_ID = DE1.ID AND DE1.DOC_ID = ? \
-        JOIN LEARNING_TO_NOTE.DOC_ENTITIES DE2 ON PAIRS.E2_ID = DE2.ID AND DE2.DOC_ID = ?", (document_id, document_id,))
+        JOIN LEARNING_TO_NOTE.DOC_ENTITIES DE1 ON PAIRS.E1_ID = DE1.E_ID AND DE1.DOC_ID = ? \
+        JOIN LEARNING_TO_NOTE.DOC_ENTITIES DE2 ON PAIRS.E2_ID = DE2.E_ID AND DE2.DOC_ID = ?", (document_id, document_id,))
     relations = []
     for result in cursor.fetchall():
         relation = {}
