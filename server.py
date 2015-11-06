@@ -136,40 +136,6 @@ def get_relations(cursor, document_id):
         relations.append(relation)
     return relations
 
-@app.route('/sentences')
-def get_sentences():
-    cursor = connection.cursor()
-    cursor.execute("SELECT * FROM LEARNING_TO_NOTE.SENTENCE")
-    sentences = list()
-    for result in cursor.fetchall():
-        sentences.append(result[0])
-    cursor.close()
-    return respond_with(sentences)
-
-
-@app.route('/sentences/<sentence_id>')
-def get_sentence(sentence_id):
-    cursor = connection.cursor()
-    cursor.execute("SELECT TEXT FROM LEARNING_TO_NOTE.SENTENCE WHERE SENTENCE.ID = ?", (sentence_id,))
-    sentence = cursor.fetchone()[0]
-    cursor.close()
-    return respond_with(str(sentence))
-
-@app.route('/sentences/<sentence_id>/entities')
-def get_sentence_entities(sentence_id):
-    cursor = connection.cursor()
-    cursor.execute(
-    'SELECT ENTITY.TEXT, OFFSET."START", OFFSET."END" '
-    'FROM LEARNING_TO_NOTE.ENTITY, LEARNING_TO_NOTE.OFFSET '
-    'WHERE ENTITY.ID = OFFSET.ENTITY_ID '
-    'AND ENTITY.SENTENCE_ID = ?', (sentence_id,))
-
-    entities = list()
-    for result in cursor.fetchall():
-        entities.append({"span":{"begin":result[1],"end":result[2]},"obj":result[0]})
-
-    cursor.close()
-    return respond_with(entities)
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
