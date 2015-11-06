@@ -103,7 +103,7 @@ def load_document(document_id):
 
 def get_text(cursor, document_id):
     cursor.execute("SELECT TEXT FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
-    text = str(cursor.fetchone()[0])
+    text = str(cursor.fetchone()[0].read())
     return text
 
 def get_denotations(cursor, document_id):
