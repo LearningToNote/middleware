@@ -53,13 +53,14 @@ def save_document(document_id, data):
     print "Received so much stuff: " + str(data)
     cursor = connection.cursor()
     save_document_text(document_id, data['text'], cursor)
-    save_annotations(document_id, data['annotations'], cursor)
+    save_annotations(document_id, data['denotations'], cursor)
     save_relations(document_id, data['relations'], cursor)
+    connection.commit()
 
 def save_document_text(document_id, text, cursor):
-    cursor.execute("UPDATE LEARNING_TO_NOTE.DOCUMENTS SET TEXT = ? WHERE ID = ?", (text, document_id))
-    cursor.execute("INSERT OR IGNORE INTO LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?)", (document_id, text))
-    #cursor.execute("UPSERT LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?) WHERE id = ?", (document_id, text, document_id))
+    # cursor.execute("UPDATE LEARNING_TO_NOTE.DOCUMENTS SET TEXT = ? WHERE ID = ?", (text, document_id))
+    # cursor.execute("INSERT OR IGNORE INTO LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?)", (document_id, text))
+    cursor.execute("UPSERT LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?) WHERE id = ?", (document_id, text, document_id))
 
 def save_annotations(document_id, annotations, cursor):
     existing_entities = []
@@ -80,7 +81,6 @@ def save_annotations(document_id, annotations, cursor):
     entity_tuples = map(lambda entity: (entity['text'], entity['type']), created_entities)
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (TEXT, TYPE) VALUES (%s, %s)", entity_tuples)
     cursor.execute("DELETE FROM LEARNING_TO_NOTE.DOC_ENTITIES WHERE DOC_ID = ?", document_id)
-
     doc_entity_tuples = map(lambda entity: (document_id, entity['id'], entity['span']['begin'], entity['span']['end']) ,
                             existing_entities + created_entities)
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.DOC_ENTITIES (DOC_ID, ENTITY_ID, START, END) \
