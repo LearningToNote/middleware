@@ -121,9 +121,9 @@ def get_denotations(cursor, document_id):
     return denotations
 
 def get_relations(cursor, document_id):
-    cursor.execute("SELECT PAIRS.ID, E1_ID, E2_ID, TYPE FROM LEARNING_TO_NOTE.PAIRS \
-        JOIN LEARNING_TO_NOTE.ENTITIES E1 ON PAIRS.E1_ID = E1.ID AND E1.DOC_ID = ? AND PAIRS.DDI = 1\
-        JOIN LEARNING_TO_NOTE.ENTITIES E2 ON PAIRS.E2_ID = E2.ID AND E2.DOC_ID = ? AND PAIRS.DDI = 1", (document_id, document_id,))
+    cursor.execute("SELECT P.ID, P.E1_ID, P.E2_ID, P.TYPE FROM LEARNING_TO_NOTE.PAIRS P \
+        JOIN LEARNING_TO_NOTE.ENTITIES E1 ON P.E1_ID = E1.ID AND E1.DOC_ID = ? AND P.DDI = 1\
+        JOIN LEARNING_TO_NOTE.ENTITIES E2 ON P.E2_ID = E2.ID AND E2.DOC_ID = ? AND P.DDI = 1", (document_id, document_id,))
     relations = []
     for result in cursor.fetchall():
         relation = {}
