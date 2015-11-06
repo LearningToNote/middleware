@@ -107,32 +107,30 @@ def get_text(cursor, document_id):
     return text
 
 def get_denotations(cursor, document_id):
-    cursor.execute('SELECT E.ID, E."TEXT", E."TYPE", DE."START", DE."END" FROM LEARNING_TO_NOTE.DOC_ENTITIES DE \
-        JOIN LEARNING_TO_NOTE.ENTITIES E ON DE.ENTITY_ID = E.ID AND DE.DOC_ID = ?', (document_id,))
+    cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END" FROM LEARNING_TO_NOTE.ENTITIES E \
+                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND E.DOC_ID = ?', (document_id,))
     denotations = []
     for result in cursor.fetchall():
         denotation = {}
         denotation['id'] = str(result[0])
         denotation['span'] = {}
-        denotation['span']['begin'] = str(result[3])
-        denotation['span']['end'] = str(result[4])
+        denotation['span']['begin'] = str(result[2])
+        denotation['span']['end'] = str(result[3])
         denotation['obj'] = str(result[1])
-        denotation['type'] = str(result[2])
         denotations.append(denotation)
     return denotations
 
 def get_relations(cursor, document_id):
-    cursor.execute("SELECT PAIRS.ID, E1_ID, E2_ID, TYPE, DDI FROM LEARNING_TO_NOTE.PAIRS \
-        JOIN LEARNING_TO_NOTE.DOC_ENTITIES DE1 ON PAIRS.E1_ID = DE1.E_ID AND DE1.DOC_ID = ? \
-        JOIN LEARNING_TO_NOTE.DOC_ENTITIES DE2 ON PAIRS.E2_ID = DE2.E_ID AND DE2.DOC_ID = ?", (document_id, document_id,))
+    cursor.execute("SELECT PAIRS.ID, E1_ID, E2_ID, TYPE FROM LEARNING_TO_NOTE.PAIRS \
+        JOIN LEARNING_TO_NOTE.ENTITIES E1 ON PAIRS.E1_ID = E1.ID AND E1.DOC_ID = ? AND PAIRS.DDI = 1\
+        JOIN LEARNING_TO_NOTE.ENTITIES E2 ON PAIRS.E2_ID = E2.ID AND E2.DOC_ID = ? AND PAIRS.DDI = 1", (document_id, document_id,))
     relations = []
     for result in cursor.fetchall():
         relation = {}
         relation['id'] = str(result[0])
-        relation['pred'] = str(result[3])
         relation['subj'] = str(result[1])
         relation['obj'] = str(result[2])
-        relation['ddi'] = str(result[4])
+        relation['pred'] = str(result[3])
         relations.append(relation)
     return relations
 
