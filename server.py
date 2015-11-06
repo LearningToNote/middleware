@@ -51,6 +51,45 @@ def get_document(document_id):
 
 def save_document(document_id, data):
     print "Received so much stuff: " + str(data)
+    cursor = connection.cursor()
+    save_document_text(document_id, data['text'], cursor)
+    save_annotations(document_id, data['annotations'], cursor)
+    save_relations(document_id, data['relations'], cursor)
+
+def save_document_text(document_id, text, cursor):
+    cursor.execute("UPDATE LEARNING_TO_NOTE.DOCUMENTS SET TEXT = ? WHERE ID = ?", (text, document_id))
+    cursor.execute("INSERT OR IGNORE INTO LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?)", (document_id, text))
+    #cursor.execute("UPSERT LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?) WHERE id = ?", (document_id, text, document_id))
+
+def save_annotations(document_id, annotations, cursor):
+    existing_entities = []
+    created_entities = []
+    for annotation in annotations:
+        cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.ENTITIES WHERE TEXT = ? AND TYPE = ?",
+                        (annotation['obj'], annotation['type']))
+        result = cursor.fetchone()
+        entity = {}
+        entity['text'] = annotation['obj']
+        entity['type'] = annotation['type']
+        if not result is None:
+            entity['id'] = result
+            existing_entities.append(entity)
+        else:
+            #entity['id'] = generate_new_entity_id()
+            created_entities.append(entity)
+    entity_tuples = map(lambda entity: (entity['text'], entity['type']), created_entities)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (TEXT, TYPE) VALUES (%s, %s)", entity_tuples)
+    cursor.execute("DELETE FROM LEARNING_TO_NOTE.DOC_ENTITIES WHERE DOC_ID = ?", document_id)
+
+    doc_entity_tuples = map(lambda entity: (document_id, entity['id'], entity['span']['begin'], entity['span']['end']) ,
+                            existing_entities + created_entities)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.DOC_ENTITIES (DOC_ID, ENTITY_ID, START, END) \
+                        VALUES (%s, %s, %s, %s)", doc_entity_tuples)
+
+def save_relations(document_id, relations, cursor):
+    relation_tuples = map(lambda relation: (relation['subj'], relation['obj'], relation['ddi'], relation['pred']), relations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, DDI, TYPE) VALUES (%s, %s, %s, %s)",
+                        relation_tuples)
 
 def load_document(document_id):
     cursor = connection.cursor()
@@ -93,6 +132,7 @@ def get_relations(cursor, document_id):
         relation['pred'] = str(result[3])
         relation['subj'] = str(result[1])
         relation['obj'] = str(result[2])
+        relation['ddi'] = str(result[4])
         relations.append(relation)
     return relations
 
