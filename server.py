@@ -3,7 +3,6 @@ import json, pyhdb, os, sys
 from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
 
-
 static_folder = "static"
 if len(sys.argv) >= 2:
     static_folder = sys.argv[1]
@@ -50,46 +49,29 @@ def get_document(document_id):
         return ""
 
 def save_document(document_id, data):
-    print "Received so much stuff: " + str(data)
+    annotations = data['denotations']
+    save_annotations(document_id, annotations)
+    id_map = {}
+    for annotation in annotations:
+        id_map[annotation['id']] = document_id + annotation.get('originalId', annotation['id'])
+    save_relations(document_id, data['relations'], id_map)
+
+def save_annotations(document_id, annotations):
     cursor = connection.cursor()
-    save_document_text(document_id, data['text'], cursor)
-    save_annotations(document_id, data['denotations'], cursor)
-    save_relations(document_id, data['relations'], cursor)
+    cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE DOC_ID = ?", (document_id,))
+    connection.commit()
+    annotation_tuples = map(lambda annotation: (document_id + annotation.get('originalId', annotation['id']), document_id, annotation['obj']), annotations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, DOC_ID, TYPE) VALUES (?, ?, ?)", annotation_tuples)
+    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], document_id + annotation.get('originalId', annotation['id'])), annotations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?)", offset_tuples)
     connection.commit()
 
-def save_document_text(document_id, text, cursor):
-    # cursor.execute("UPDATE LEARNING_TO_NOTE.DOCUMENTS SET TEXT = ? WHERE ID = ?", (text, document_id))
-    # cursor.execute("INSERT OR IGNORE INTO LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?)", (document_id, text))
-    cursor.execute("UPSERT LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?) WHERE id = ?", (document_id, text, document_id))
-
-def save_annotations(document_id, annotations, cursor):
-    existing_entities = []
-    created_entities = []
-    for annotation in annotations:
-        cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.ENTITIES WHERE TEXT = ? AND TYPE = ?",
-                        (annotation['obj'], annotation['type']))
-        result = cursor.fetchone()
-        entity = {}
-        entity['text'] = annotation['obj']
-        entity['type'] = annotation['type']
-        if not result is None:
-            entity['id'] = result
-            existing_entities.append(entity)
-        else:
-            #entity['id'] = generate_new_entity_id()
-            created_entities.append(entity)
-    entity_tuples = map(lambda entity: (entity['text'], entity['type']), created_entities)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (TEXT, TYPE) VALUES (%s, %s)", entity_tuples)
-    cursor.execute("DELETE FROM LEARNING_TO_NOTE.DOC_ENTITIES WHERE DOC_ID = ?", document_id)
-    doc_entity_tuples = map(lambda entity: (document_id, entity['id'], entity['span']['begin'], entity['span']['end']) ,
-                            existing_entities + created_entities)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.DOC_ENTITIES (DOC_ID, ENTITY_ID, START, END) \
-                        VALUES (%s, %s, %s, %s)", doc_entity_tuples)
-
-def save_relations(document_id, relations, cursor):
-    relation_tuples = map(lambda relation: (relation['subj'], relation['obj'], relation['ddi'], relation['pred']), relations)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, DDI, TYPE) VALUES (%s, %s, %s, %s)",
+def save_relations(document_id, relations, id_map):
+    cursor = connection.cursor()
+    relation_tuples = map(lambda relation: (id_map[relation['subj']], id_map[relation['obj']], 1, relation['pred']), relations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, DDI, TYPE) VALUES (?, ?, ?, ?)",
                         relation_tuples)
+    connection.commit()
 
 def load_document(document_id):
     cursor = connection.cursor()
@@ -108,16 +90,25 @@ def get_text(cursor, document_id):
 
 def get_denotations(cursor, document_id):
     cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END" FROM LEARNING_TO_NOTE.ENTITIES E \
-                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND E.DOC_ID = ?', (document_id,))
+                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND E.DOC_ID = ? \
+                    ORDER BY E.ID', (document_id,))
     denotations = []
+    increment = 1
+    previous_id = None
     for result in cursor.fetchall():
         denotation = {}
-        denotation['id'] = str(result[0])
+        current_id = str(result[0])
+        if current_id == previous_id:
+            current_id += "_" + str(increment)
+            increment += 1
+        denotation['id'] = current_id.replace(document_id, '', 1)
         denotation['obj'] = str(result[1])
         denotation['span'] = {}
         denotation['span']['begin'] = result[2]
         denotation['span']['end'] = result[3]
+        denotation['originalId'] = str(result[0]).replace(document_id, '', 1)
         denotations.append(denotation)
+        previous_id = str(result[0])
     return denotations
 
 def get_relations(cursor, document_id):
@@ -128,12 +119,11 @@ def get_relations(cursor, document_id):
     for result in cursor.fetchall():
         relation = {}
         relation['id'] = str(result[0])
-        relation['subj'] = str(result[1])
-        relation['obj'] = str(result[2])
+        relation['subj'] = str(result[1]).replace(document_id, '', 1)
+        relation['obj'] = str(result[2]).replace(document_id, '', 1)
         relation['pred'] = str(result[3])
         relations.append(relation)
     return relations
-
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
