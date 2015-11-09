@@ -113,10 +113,10 @@ def get_denotations(cursor, document_id):
     for result in cursor.fetchall():
         denotation = {}
         denotation['id'] = str(result[0])
-        denotation['span'] = {}
-        denotation['span']['begin'] = str(result[2])
-        denotation['span']['end'] = str(result[3])
         denotation['obj'] = str(result[1])
+        denotation['span'] = {}
+        denotation['span']['begin'] = result[2]
+        denotation['span']['end'] = result[3]
         denotations.append(denotation)
     return denotations
 
