@@ -3,7 +3,6 @@ import json, pyhdb, os, sys
 from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
 
-
 static_folder = "static"
 if len(sys.argv) >= 2:
     static_folder = sys.argv[1]
@@ -27,7 +26,7 @@ def init():
         password=secrets['password']
     )
 
-    app.run(port=8080, debug=True)
+    app.run(host='0.0.0.0',port=8080,debug=True)
 
 
 @app.route('/documents')
@@ -50,7 +49,29 @@ def get_document(document_id):
         return ""
 
 def save_document(document_id, data):
-    print "Received so much stuff: " + str(data)
+    annotations = data['denotations']
+    save_annotations(document_id, annotations)
+    id_map = {}
+    for annotation in annotations:
+        id_map[annotation['id']] = document_id + annotation.get('originalId', annotation['id'])
+    save_relations(document_id, data['relations'], id_map)
+
+def save_annotations(document_id, annotations):
+    cursor = connection.cursor()
+    cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE DOC_ID = ?", (document_id,))
+    connection.commit()
+    annotation_tuples = map(lambda annotation: (document_id + annotation.get('originalId', annotation['id']), document_id, annotation['obj']), annotations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, DOC_ID, TYPE) VALUES (?, ?, ?)", annotation_tuples)
+    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], document_id + annotation.get('originalId', annotation['id'])), annotations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?)", offset_tuples)
+    connection.commit()
+
+def save_relations(document_id, relations, id_map):
+    cursor = connection.cursor()
+    relation_tuples = map(lambda relation: (id_map[relation['subj']], id_map[relation['obj']], 1, relation['pred']), relations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, DDI, TYPE) VALUES (?, ?, ?, ?)",
+                        relation_tuples)
+    connection.commit()
 
 def load_document(document_id):
     cursor = connection.cursor()
@@ -64,72 +85,45 @@ def load_document(document_id):
 
 def get_text(cursor, document_id):
     cursor.execute("SELECT TEXT FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
-    text = str(cursor.fetchone()[0])
+    text = str(cursor.fetchone()[0].read())
     return text
 
 def get_denotations(cursor, document_id):
-    cursor.execute('SELECT E.ID, E."TEXT", E."TYPE", DE."START", DE."END" FROM LEARNING_TO_NOTE.DOC_ENTITIES DE \
-        JOIN LEARNING_TO_NOTE.ENTITIES E ON DE.ENTITY_ID = E.ID AND DE.DOC_ID = ?', (document_id,))
+    cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END" FROM LEARNING_TO_NOTE.ENTITIES E \
+                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND E.DOC_ID = ? \
+                    ORDER BY E.ID', (document_id,))
     denotations = []
+    increment = 1
+    previous_id = None
     for result in cursor.fetchall():
         denotation = {}
-        denotation['id'] = str(result[0])
-        denotation['span'] = {}
-        denotation['span']['begin'] = str(result[3])
-        denotation['span']['end'] = str(result[4])
+        current_id = str(result[0])
+        if current_id == previous_id:
+            current_id += "_" + str(increment)
+            increment += 1
+        denotation['id'] = current_id.replace(document_id, '', 1)
         denotation['obj'] = str(result[1])
-        denotation['type'] = str(result[2])
+        denotation['span'] = {}
+        denotation['span']['begin'] = result[2]
+        denotation['span']['end'] = result[3]
+        denotation['originalId'] = str(result[0]).replace(document_id, '', 1)
         denotations.append(denotation)
+        previous_id = str(result[0])
     return denotations
 
 def get_relations(cursor, document_id):
-    cursor.execute("SELECT PAIRS.ID, E1_ID, E2_ID, TYPE, DDI FROM LEARNING_TO_NOTE.PAIRS \
-        JOIN LEARNING_TO_NOTE.DOC_ENTITIES DE1 ON PAIRS.E1_ID = DE1.E_ID AND DE1.DOC_ID = ? \
-        JOIN LEARNING_TO_NOTE.DOC_ENTITIES DE2 ON PAIRS.E2_ID = DE2.E_ID AND DE2.DOC_ID = ?", (document_id, document_id,))
+    cursor.execute("SELECT P.ID, P.E1_ID, P.E2_ID, P.TYPE FROM LEARNING_TO_NOTE.PAIRS P \
+        JOIN LEARNING_TO_NOTE.ENTITIES E1 ON P.E1_ID = E1.ID AND E1.DOC_ID = ? AND P.DDI = 1\
+        JOIN LEARNING_TO_NOTE.ENTITIES E2 ON P.E2_ID = E2.ID AND E2.DOC_ID = ? AND P.DDI = 1", (document_id, document_id,))
     relations = []
     for result in cursor.fetchall():
         relation = {}
         relation['id'] = str(result[0])
+        relation['subj'] = str(result[1]).replace(document_id, '', 1)
+        relation['obj'] = str(result[2]).replace(document_id, '', 1)
         relation['pred'] = str(result[3])
-        relation['subj'] = str(result[1])
-        relation['obj'] = str(result[2])
         relations.append(relation)
     return relations
-
-@app.route('/sentences')
-def get_sentences():
-    cursor = connection.cursor()
-    cursor.execute("SELECT * FROM LEARNING_TO_NOTE.SENTENCE")
-    sentences = list()
-    for result in cursor.fetchall():
-        sentences.append(result[0])
-    cursor.close()
-    return respond_with(sentences)
-
-
-@app.route('/sentences/<sentence_id>')
-def get_sentence(sentence_id):
-    cursor = connection.cursor()
-    cursor.execute("SELECT TEXT FROM LEARNING_TO_NOTE.SENTENCE WHERE SENTENCE.ID = ?", (sentence_id,))
-    sentence = cursor.fetchone()[0]
-    cursor.close()
-    return respond_with(str(sentence))
-
-@app.route('/sentences/<sentence_id>/entities')
-def get_sentence_entities(sentence_id):
-    cursor = connection.cursor()
-    cursor.execute(
-    'SELECT ENTITY.TEXT, OFFSET."START", OFFSET."END" '
-    'FROM LEARNING_TO_NOTE.ENTITY, LEARNING_TO_NOTE.OFFSET '
-    'WHERE ENTITY.ID = OFFSET.ENTITY_ID '
-    'AND ENTITY.SENTENCE_ID = ?', (sentence_id,))
-
-    entities = list()
-    for result in cursor.fetchall():
-        entities.append({"span":{"begin":result[1],"end":result[2]},"obj":result[0]})
-
-    cursor.close()
-    return respond_with(entities)
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
