@@ -93,21 +93,26 @@ def get_denotations(cursor, document_id):
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND E.DOC_ID = ? \
                     ORDER BY E.ID', (document_id,))
     denotations = []
-    increment = 1
     previous_id = None
     for result in cursor.fetchall():
-        denotation = {}
         current_id = str(result[0])
         if current_id == previous_id:
-            current_id += "_" + str(increment)
-            increment += 1
-        denotation['id'] = current_id.replace(document_id, '', 1)
-        denotation['obj'] = str(result[1])
-        denotation['span'] = {}
-        denotation['span']['begin'] = result[2]
-        denotation['span']['end'] = result[3]
-        denotation['originalId'] = str(result[0]).replace(document_id, '', 1)
-        denotations.append(denotation)
+            denotation = denotations[-1]
+            offset = {}
+            offset['begin'] = result[2]
+            offset['end'] = result[3]
+            denotation['span'].append(offset)
+        else:
+            denotation = {}
+            denotation['id'] = current_id.replace(document_id, '', 1)
+            denotation['obj'] = str(result[1])
+            denotation['span'] = []
+            offset = {}
+            offset['begin'] = result[2]
+            offset['end'] = result[3]
+            denotation['span'].append(offset)
+            denotation['originalId'] = str(result[0]).replace(document_id, '', 1)
+            denotations.append(denotation)
         previous_id = str(result[0])
     return denotations
 
