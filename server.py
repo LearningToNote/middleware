@@ -33,7 +33,7 @@ def init():
 @app.route('/documents')
 def get_documents():
     cursor = connection.cursor()
-    cursor.execute("SELECT id FROM LEARNING_TO_NOTE.DOCUMENTS")
+    cursor.execute("SELECT id FROM LEARNING_TO_NOTE.DOCUMENTS ORDER BY id")
     documents = list()
     for result in cursor.fetchall():
         documents.append(result[0])
