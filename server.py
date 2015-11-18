@@ -90,7 +90,8 @@ def get_text(cursor, document_id):
 
 def get_denotations(cursor, document_id):
     cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END" FROM LEARNING_TO_NOTE.ENTITIES E \
-                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND E.DOC_ID = ? \
+                    JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO ON E.USER_DOC_ID = UO.ID AND UO.DOCUMENT_ID = ? \
+                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID \
                     ORDER BY E.ID', (document_id,))
     denotations = []
     increment = 1
@@ -113,8 +114,10 @@ def get_denotations(cursor, document_id):
 
 def get_relations(cursor, document_id):
     cursor.execute("SELECT P.ID, P.E1_ID, P.E2_ID, P.TYPE FROM LEARNING_TO_NOTE.PAIRS P \
-        JOIN LEARNING_TO_NOTE.ENTITIES E1 ON P.E1_ID = E1.ID AND E1.DOC_ID = ? AND P.DDI = 1\
-        JOIN LEARNING_TO_NOTE.ENTITIES E2 ON P.E2_ID = E2.ID AND E2.DOC_ID = ? AND P.DDI = 1", (document_id, document_id,))
+        JOIN LEARNING_TO_NOTE.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1\
+        JOIN LEARNING_TO_NOTE.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1\
+        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO1 ON E1.USER_DOC_ID = UO1.ID AND UO1.DOCUMENT_ID = ?\
+        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO2 ON E2.USER_DOC_ID = UO2.ID AND UO2.DOCUMENT_ID = ?", (document_id, document_id,))
     relations = []
     for result in cursor.fetchall():
         relation = {}
