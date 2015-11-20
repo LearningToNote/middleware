@@ -1,4 +1,4 @@
-import json, pyhdb, os, sys, ssl
+import json, pyhdb, os, sys
 
 from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
@@ -19,8 +19,7 @@ connection = None
 SECRET_KEY = 'development key'
 app.config.from_object(__name__)
 
-context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-context.load_cert_chain(SERVER_ROOT + '/certificate.crt', SERVER_ROOT + '/certificate.key')
+context = (SERVER_ROOT + '/certificate.crt',SERVER_ROOT + '/certificate.key')
 
 login_manager = LoginManager()
 login_manager.session_protection = None
