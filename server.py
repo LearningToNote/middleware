@@ -48,8 +48,8 @@ def load_user(user_id):
 @app.route('/login', methods=['POST'])
 def login():
     req = request.get_json()
-    if req and 'id' in req and 'password' in req:
-        user = load_user(req['id'])
+    if req and 'username' in req and 'password' in req:
+        user = load_user(req['username'])
         if user and req['password'] == user.token:
             login_user(user)
             user.token = None
