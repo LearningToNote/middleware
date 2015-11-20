@@ -1,7 +1,10 @@
-import json, pyhdb, os, sys
+import json, pyhdb, os, sys, ssl
 
 from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
+from flask_login import LoginManager, login_user, current_user
+
+from user import User
 
 static_folder = "static"
 if len(sys.argv) >= 2:
@@ -12,6 +15,16 @@ CORS(app, supports_credentials=True)
 
 SERVER_ROOT = os.path.dirname(os.path.realpath(__file__))
 connection = None
+
+SECRET_KEY = 'development key'
+app.config.from_object(__name__)
+
+context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+context.load_cert_chain('certificate.crt', 'certificate.key')
+
+login_manager = LoginManager()
+login_manager.session_protection = None
+login_manager.init_app(app)
 
 def init():
     global connection
@@ -26,8 +39,26 @@ def init():
         password=secrets['password']
     )
 
-    app.run(host='0.0.0.0',port=8080,debug=True)
+    app.run(host='0.0.0.0',port=8080,debug=True,ssl_context=context)
 
+@login_manager.user_loader
+def load_user(user_id):
+    return User.get(user_id, connection.cursor())
+
+@app.route('/login', methods=['POST'])
+def login():
+    req = request.get_json()
+    if req and 'id' in req and 'password' in req:
+        user = load_user(req['id'])
+        if user and req['password'] == user.token:
+            login_user(user)
+            user.token = None
+            return respond_with(user.__dict__)
+    return "Not authorized", 401
+
+@app.route('/current_user')
+def get_user():
+    return respond_with(current_user.__dict__)
 
 @app.route('/documents')
 def get_documents():
