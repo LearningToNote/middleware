@@ -20,7 +20,7 @@ SECRET_KEY = 'development key'
 app.config.from_object(__name__)
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-context.load_cert_chain('certificate.crt', 'certificate.key')
+context.load_cert_chain(SERVER_ROOT + '/certificate.crt', SERVER_ROOT + '/certificate.key')
 
 login_manager = LoginManager()
 login_manager.session_protection = None
