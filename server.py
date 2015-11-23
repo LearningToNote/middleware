@@ -2,7 +2,7 @@ import json, pyhdb, os, sys
 
 from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
-from flask_login import LoginManager, login_user, current_user
+from flask_login import LoginManager, login_user, logout_user, current_user
 
 from user import User
 
@@ -54,6 +54,11 @@ def login():
             user.token = None
             return respond_with(user.__dict__)
     return "Not authorized", 401
+
+@app.route('/logout', methods=['GET', 'POST'])
+def logout():
+    logout_user()
+    return "", 200
 
 @app.route('/current_user')
 def get_user():
@@ -120,9 +125,10 @@ def get_text(cursor, document_id):
 
 def get_denotations(cursor, document_id):
     cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END" FROM LEARNING_TO_NOTE.ENTITIES E \
-                    JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO ON E.USER_DOC_ID = UO.ID AND UO.DOCUMENT_ID = ? \
+                    JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID \
-                    ORDER BY E.ID', (document_id,))
+                    WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ?\
+                    ORDER BY E.ID', (document_id, current_user.get_id()))
     denotations = []
     increment = 1
     previous_id = None
