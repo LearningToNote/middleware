@@ -66,7 +66,9 @@ def get_current_user():
 
 @app.route('/users')
 def get_users():
-    users = User.all(connection.cursor())
+    cursor = connection.cursor()
+    users = User.all(cursor)
+    cursor.close()
     return respond_with(map(lambda user: user.__dict__, users))
 
 @app.route('/users/<user_id>')
@@ -76,6 +78,17 @@ def get_user(user_id):
         return "User not found", 404
     user.token = None
     return respond_with(user.__dict__)
+
+@app.route('/user_documents/<user_id>')
+def get_user_documents(user_id):
+    cursor = connection.cursor()
+    cursor.execute("SELECT * FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE USER_ID = ? OR VISIBILITY > 0", (user_id,))
+    user_documents = list()
+    for result in cursor.fetchall():
+        user_documents.append({"id": result[0], "user_id": result[1], "document_id": result[2], "visibility": result[3],
+                               "created_at": str(result[4]), "updated_at": str(result[5])})
+    cursor.close()
+    return respond_with(user_documents)
 
 @app.route('/documents')
 def get_documents():
