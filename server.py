@@ -61,8 +61,21 @@ def logout():
     return "", 200
 
 @app.route('/current_user')
-def get_user():
+def get_current_user():
     return respond_with(current_user.__dict__)
+
+@app.route('/users')
+def get_users():
+    users = User.all(connection.cursor())
+    return respond_with(map(lambda user: user.__dict__, users))
+
+@app.route('/users/<user_id>')
+def get_user(user_id):
+    user = load_user(user_id)
+    if not user:
+        return "User not found", 404
+    user.token = None
+    return respond_with(user.__dict__)
 
 @app.route('/documents')
 def get_documents():

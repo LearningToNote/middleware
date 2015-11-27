@@ -9,6 +9,14 @@ class User:
         else:
             return None
 
+    @classmethod
+    def all(cls, cursor):
+        cursor.execute("SELECT id, name FROM LEARNING_TO_NOTE.Users")
+        users = list()
+        for row in cursor.fetchall():
+            users.append(User(str(row[0]), str(row[1]), None))
+        return users
+
     def __init__(self, id, name, token):
         self.id = id
         self.name = name
