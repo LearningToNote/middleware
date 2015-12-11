@@ -4,7 +4,11 @@ from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
 from flask_login import LoginManager, login_user, logout_user, current_user
 
+from collections import namedtuple
+
 from user import User
+
+Entity = namedtuple('Entity', ['id', 'user_doc_id', 'type', 'start', 'end'])
 
 static_folder = "static"
 if len(sys.argv) >= 2:
@@ -201,6 +205,93 @@ def get_relations(cursor, document_id):
         relation['pred'] = str(result[3])
         relations.append(relation)
     return relations
+
+@app.route('/evaluate', methods=['POST'])
+def return_entities():
+    req = request.get_json()
+    document_id = req['document_id']
+    user1 = req['user1']
+    user2 = req['user2']
+    cursor = connection.cursor()
+    e1 = get_entities_for_user_document(cursor, document_id, user1)
+    e2 = get_entities_for_user_document(cursor, document_id, user2)
+    e1p, e2p = 0, 0
+    matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, 0
+    while True:
+        if e1p >= len(e1):
+            misses += len(e2) - e2p
+            break
+        if e2p >= len(e2):
+            misses += len(e1) - e1p
+            break
+        a1, a2 = e1[e1p], e2[e2p]
+        if a1.start < a2.start:
+            if a1.end < a2.start:
+                misses += 1
+                e1p += 1
+            else:
+                if (a1.end >= a2.start and a1.end < a2.end) or a1.end > a2.end:
+                    if a1.type == a2.type:
+                        overlaps += 1
+                    else:
+                        wrong_type += 1
+                    e1p += 1
+                    e2p += 1
+                else:
+                    if a1.type == a2.type:
+                        right_aligns += 1
+                    else:
+                        wrong_type += 1
+                    e1p += 1
+                    e2p += 1
+        else:
+            if a1.start == a2.start:
+                if a1.end < a2.end or a1.end > a2.end:
+                    if a1.type == a2.type:
+                        left_aligns += 1
+                    else:
+                        wrong_type += 1
+                    e1p += 1
+                    e2p += 1
+                else:
+                    if a1.type == a2.type:
+                        matches += 1
+                    else:
+                        wrong_type += 1
+                    e1p += 1
+                    e2p += 1
+            else:
+                if a1.start <= a2.end:
+                    if a1.end != a2.end:
+                        if a1.type == a2.type:
+                            overlaps += 1
+                        else:
+                            wrong_type += 1
+                        e1p += 1
+                        e2p += 1
+                    else:
+                        if a1.type == a2.type:
+                            right_aligns += 1
+                        else:
+                            wrong_type += 1
+                        e1p += 1
+                        e2p += 1
+                else:
+                    misses += 1
+                    e2p += 1
+
+    return respond_with({"matches": matches, "left-aligns": left_aligns, "right-aligns": right_aligns,
+                         "overlaps": overlaps, "misses": misses, "wrong-type": wrong_type})
+
+def get_entities_for_user_document(cursor, document_id, user_id):
+    cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
+                    JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
+                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID \
+                    WHERE UD.USER_ID = ? ORDER BY E.ID', (document_id, user_id))
+    annotations = []
+    for result in cursor.fetchall():
+        annotations.append(Entity(id=result[0], type=result[1], start=result[2], end=result[3], user_doc_id=result[4]))
+    return annotations
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
