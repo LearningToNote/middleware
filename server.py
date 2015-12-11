@@ -137,6 +137,7 @@ def save_relations(document_id, relations, id_map):
 def load_document(document_id):
     cursor = connection.cursor()
     result = {}
+    print "Loading information for document_id: " + str(document_id) + " and user: " + str(current_user.get_id())
     result['text'] = get_text(cursor, document_id)
     result['denotations'] = get_denotations(cursor, document_id)
     result['relations'] = get_relations(cursor, document_id)
@@ -146,30 +147,41 @@ def load_document(document_id):
 
 def get_text(cursor, document_id):
     cursor.execute("SELECT TEXT FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
-    text = str(cursor.fetchone()[0].read())
+    result = cursor.fetchone()
+    text = None
+    if result:
+        text = str(result[0].read())
     return text
 
 def get_denotations(cursor, document_id):
-    cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END" FROM LEARNING_TO_NOTE.ENTITIES E \
+    cursor.execute('SELECT E.ID, T.CODE, O."START", O."END", UD.USER_ID FROM LEARNING_TO_NOTE.ENTITIES E \
                     JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID \
+                    JOIN TYPES ON E.TYPE_ID = T.ID \
                     WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ?\
                     ORDER BY E.ID', (document_id, current_user.get_id()))
     denotations = []
     increment = 1
     previous_id = None
+    #todo: handle being not logged in
+    user_id_mapping = {current_user.get_id(): 0}
     for result in cursor.fetchall():
         denotation = {}
         current_id = str(result[0])
+        creator = str(result[4])
         if current_id == previous_id:
             current_id += "_" + str(increment)
             increment += 1
+        if not user_id_mapping.get(creator):
+            user_id_mapping[creator] = len(user_id_mapping)
         denotation['id'] = current_id.replace(document_id, '', 1)
         denotation['obj'] = str(result[1])
         denotation['span'] = {}
         denotation['span']['begin'] = result[2]
         denotation['span']['end'] = result[3]
+        #neccessary for split annotations
         denotation['originalId'] = str(result[0]).replace(document_id, '', 1)
+        denotation['userId'] = user_id_mapping.get(creator)
         denotations.append(denotation)
         previous_id = str(result[0])
     return denotations
