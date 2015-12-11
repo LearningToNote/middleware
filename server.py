@@ -204,7 +204,7 @@ def return_entities():
     e1 = get_entities_for_user_document(cursor, document_id, user1)
     e2 = get_entities_for_user_document(cursor, document_id, user2)
     e1p, e2p = 0, 0
-    matches, left_aligns, right_aligns, overlaps, misses = 0, 0, 0, 0, 0
+    matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, 0
     while True:
         if e1p >= len(e1):
             misses += len(e2) - e2p
@@ -219,31 +219,49 @@ def return_entities():
                 e1p += 1
             else:
                 if (a1.end >= a2.start and a1.end < a2.end) or a1.end > a2.end:
-                    overlaps += 1
+                    if a1.type == a2.type:
+                        overlaps += 1
+                    else:
+                        wrong_type += 1
                     e1p += 1
                     e2p += 1
                 else:
-                    right_aligns += 1
+                    if a1.type == a2.type:
+                        right_aligns += 1
+                    else:
+                        wrong_type += 1
                     e1p += 1
                     e2p += 1
         else:
             if a1.start == a2.start:
                 if a1.end < a2.end or a1.end > a2.end:
-                    left_aligns += 1
+                    if a1.type == a2.type:
+                        left_aligns += 1
+                    else:
+                        wrong_type += 1
                     e1p += 1
                     e2p += 1
                 else:
-                    matches += 1
+                    if a1.type == a2.type:
+                        matches += 1
+                    else:
+                        wrong_type += 1
                     e1p += 1
                     e2p += 1
             else:
                 if a1.start <= a2.end:
                     if a1.end != a2.end:
-                        overlaps += 1
+                        if a1.type == a2.type:
+                            overlaps += 1
+                        else:
+                            wrong_type += 1
                         e1p += 1
                         e2p += 1
                     else:
-                        right_aligns += 1
+                        if a1.type == a2.type:
+                            right_aligns += 1
+                        else:
+                            wrong_type += 1
                         e1p += 1
                         e2p += 1
                 else:
@@ -251,7 +269,7 @@ def return_entities():
                     e2p += 1
 
     return respond_with({"matches": matches, "left-aligns": left_aligns, "right-aligns": right_aligns,
-                         "overlaps": overlaps, "misses": misses})
+                         "overlaps": overlaps, "misses": misses, "wrong-type": wrong_type})
 
 def get_entities_for_user_document(cursor, document_id, user_id):
     cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
