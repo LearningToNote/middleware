@@ -119,18 +119,16 @@ def save_document(document_id, data):
     successful = True
     user_doc_id = load_user_doc_id(document_id, current_user.get_id())
     successful &= save_annotations(document_id, annotations)
-    id_map = {}
-    #TODO: using user_doc_id instead of document_id will change the id of annotations
-    #that existed before loading the document into our editor
-    for annotation in annotations:
-        id_map[annotation['id']] = user_doc_id + annotation.get('originalId', annotation['id'])
     if successful:
+        id_map = {}
+        #neccessary, as TextAE does not create "originalId"s
+        for annotation in annotations:
+            id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
         successful &= save_relations(document_id, data['relations'], id_map)
     return successful
 
 def save_annotations(user_doc_id, annotations):
-    #only save annotations from the current user, represented as userId 0
-    #when loading the document
+    #only save annotations from the current user, defined as userId 0 at loading time
     filtered_annotations = filter(lambda annotation: annotation.get('userId', 0) == 0, annotations)
     cursor = connection.cursor()
     if not user_doc_id:
@@ -140,11 +138,11 @@ def save_annotations(user_doc_id, annotations):
     connection.commit()
     #TODO: insert/update types
     # insert new entities and offsets
-    #TODO: using user_doc_id will change the id of annotations that existed before loading the document into our editor
-    annotation_tuples = map(lambda annotation: (user_doc_id + annotation.get('originalId', annotation['id']), user_doc_id, annotation['obj']), annotations)
+    #TODO: adapt the schema so that the entity primary key consists of user_doc_id + entitiy_id
+    annotation_tuples = map(lambda annotation: (annotation.get('originalId', annotation['id']), user_doc_id, annotation['obj']), annotations)
     #TODO: handle TYPE_ID and TEXT
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, USER_DOC_ID, LABEL) VALUES (?, ?, ?)", annotation_tuples)
-    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], user_doc_id + annotation.get('originalId', annotation['id'])), annotations)
+    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], annotation.get('originalId', annotation['id'])), annotations)
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?)", offset_tuples)
     connection.commit()
 
@@ -208,13 +206,13 @@ def get_denotations(cursor, document_id):
             increment = 1
         if not user_id_mapping.get(creator):
             user_id_mapping[creator] = len(user_id_mapping)
-        denotation['id'] = current_id.replace(document_id, '', 1)
+        denotation['id'] = current_id
         denotation['obj'] = str(result[1])
         denotation['span'] = {}
         denotation['span']['begin'] = result[2]
         denotation['span']['end'] = result[3]
         #neccessary for split annotations
-        denotation['originalId'] = str(result[0]).replace(document_id, '', 1)
+        denotation['originalId'] = str(result[0])
         denotation['userId'] = user_id_mapping.get(creator)
         denotations.append(denotation)
         previous_id = str(result[0])
@@ -232,8 +230,8 @@ def get_relations(cursor, document_id):
     for result in cursor.fetchall():
         relation = {}
         relation['id'] = str(result[0])
-        relation['subj'] = str(result[1]).replace(document_id, '', 1)
-        relation['obj'] = str(result[2]).replace(document_id, '', 1)
+        relation['subj'] = str(result[1])
+        relation['obj'] = str(result[2])
         relation['pred'] = str(result[3])
         relations.append(relation)
     return relations
