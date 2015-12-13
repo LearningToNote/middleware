@@ -110,24 +110,41 @@ def get_document(document_id):
     if request.method == 'GET':
         return load_document(document_id)
     else:
-        save_document(document_id, request.get_json())
+        successful = save_document(document_id, request.get_json())
+        #TODO: handle being not successful
         return ""
 
 def save_document(document_id, data):
     annotations = data['denotations']
-    save_annotations(document_id, annotations)
+    successful = True
+    user_doc_id = load_user_doc_id(document_id, current_user.get_id())
+    successful &= save_annotations(document_id, annotations)
     id_map = {}
+    #TODO: using user_doc_id instead of document_id will change the id of annotations
+    #that existed before loading the document into our editor
     for annotation in annotations:
-        id_map[annotation['id']] = document_id + annotation.get('originalId', annotation['id'])
-    save_relations(document_id, data['relations'], id_map)
+        id_map[annotation['id']] = user_doc_id + annotation.get('originalId', annotation['id'])
+    if successful:
+        successful &= save_relations(document_id, data['relations'], id_map)
+    return successful
 
-def save_annotations(document_id, annotations):
+def save_annotations(user_doc_id, annotations):
+    #only save annotations from the current user, represented as userId 0
+    #when loading the document
+    filtered_annotations = filter(lambda annotation: annotation.get('userId', 0) == 0, annotations)
     cursor = connection.cursor()
-    cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE DOC_ID = ?", (document_id,))
+    if not user_doc_id:
+        return False
+    # delete entities for this user document
+    cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID = ?", (user_doc_id,))
     connection.commit()
-    annotation_tuples = map(lambda annotation: (document_id + annotation.get('originalId', annotation['id']), document_id, annotation['obj']), annotations)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, DOC_ID, TYPE) VALUES (?, ?, ?)", annotation_tuples)
-    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], document_id + annotation.get('originalId', annotation['id'])), annotations)
+    #TODO: insert/update types
+    # insert new entities and offsets
+    #TODO: using user_doc_id will change the id of annotations that existed before loading the document into our editor
+    annotation_tuples = map(lambda annotation: (user_doc_id + annotation.get('originalId', annotation['id']), user_doc_id, annotation['obj']), annotations)
+    #TODO: handle TYPE_ID and TEXT
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, USER_DOC_ID, LABEL) VALUES (?, ?, ?)", annotation_tuples)
+    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], user_doc_id + annotation.get('originalId', annotation['id'])), annotations)
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?)", offset_tuples)
     connection.commit()
 
@@ -138,6 +155,16 @@ def save_relations(document_id, relations, id_map):
                         relation_tuples)
     connection.commit()
 
+def load_user_doc_id(document_id, user_id):
+    cursor = connection.cursor()
+    user_id = current_user.get_id()
+    # get user document id
+    cursor.execute("SELECT ID FROM USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?", (document_id, user_id))
+    result = cursor.fetchone()
+    if result:
+        return str(result[0].read())
+    return None
+
 def load_document(document_id):
     cursor = connection.cursor()
     result = {}
@@ -147,6 +174,7 @@ def load_document(document_id):
     result['relations'] = get_relations(cursor, document_id)
     result['sourceid'] = document_id
     cursor.close()
+    print result
     return respond_with(result)
 
 def get_text(cursor, document_id):
@@ -161,7 +189,7 @@ def get_denotations(cursor, document_id):
     cursor.execute('SELECT E.ID, T.CODE, O."START", O."END", UD.USER_ID FROM LEARNING_TO_NOTE.ENTITIES E \
                     JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID \
-                    JOIN TYPES ON E.TYPE_ID = T.ID \
+                    JOIN LEARNING_TO_NOTE.TYPES T ON E.TYPE_ID = T.ID \
                     WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ?\
                     ORDER BY E.ID', (document_id, current_user.get_id()))
     denotations = []
@@ -176,6 +204,8 @@ def get_denotations(cursor, document_id):
         if current_id == previous_id:
             current_id += "_" + str(increment)
             increment += 1
+        else:
+            increment = 1
         if not user_id_mapping.get(creator):
             user_id_mapping[creator] = len(user_id_mapping)
         denotation['id'] = current_id.replace(document_id, '', 1)
@@ -191,11 +221,13 @@ def get_denotations(cursor, document_id):
     return denotations
 
 def get_relations(cursor, document_id):
-    cursor.execute("SELECT P.ID, P.E1_ID, P.E2_ID, P.TYPE FROM LEARNING_TO_NOTE.PAIRS P \
+    current_user_id = current_user.get_id()
+    cursor.execute("SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL FROM LEARNING_TO_NOTE.PAIRS P \
         JOIN LEARNING_TO_NOTE.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1\
         JOIN LEARNING_TO_NOTE.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1\
-        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO1 ON E1.USER_DOC_ID = UO1.ID AND UO1.DOCUMENT_ID = ?\
-        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO2 ON E2.USER_DOC_ID = UO2.ID AND UO2.DOCUMENT_ID = ?", (document_id, document_id,))
+        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO1 ON E1.USER_DOC_ID = UO1.ID AND UO1.DOCUMENT_ID = ? AND UO1.USER_ID = ?\
+        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO2 ON E2.USER_DOC_ID = UO2.ID AND UO2.DOCUMENT_ID = ? AND UO2.USER_ID = ?",
+        (document_id, current_user_id, document_id, current_user_id))
     relations = []
     for result in cursor.fetchall():
         relation = {}
