@@ -213,82 +213,53 @@ def return_entities():
     user1 = req['user1']
     user2 = req['user2']
     cursor = connection.cursor()
-    e1 = get_entities_for_user_document(cursor, document_id, user1)
-    e2 = get_entities_for_user_document(cursor, document_id, user2)
-    e1p, e2p = 0, 0
+    e1 = sorted(get_entities_for_user_document(cursor, document_id, user1), key=lambda x: x.start)
+    e2 = sorted(get_entities_for_user_document(cursor, document_id, user2), key=lambda x: x.start)
+    if len(e1) < len(e2):
+        shortList, longList = e1, e2
+    else:
+        shortList, longList = e2, e1
+
+    p = 0
     matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, 0
-    while True:
-        if e1p >= len(e1):
-            misses += len(e2) - e2p
-            break
-        if e2p >= len(e2):
-            misses += len(e1) - e1p
-            break
-        a1, a2 = e1[e1p], e2[e2p]
-        if a1.start < a2.start:
-            if a1.end < a2.start:
-                misses += 1
-                e1p += 1
+
+    for entity in longList:
+        while shortList[p].end < entity.start:
+            p += 1
+            if p == len(shortList) - 1:
+                break
+        can_miss = True
+        for candidate in shortList[p:]:
+            if candidate.start > entity.end:
+                if can_miss:
+                    misses += 1
+                break
+            can_miss = False
+            if candidate.start != entity.start:
+                if candidate.end == entity.end:
+                    right_aligns += 1
+                else:
+                    overlaps += 1
             else:
-                if (a1.end >= a2.start and a1.end < a2.end) or a1.end > a2.end:
-                    if a1.type == a2.type:
-                        overlaps += 1
-                    else:
-                        wrong_type += 1
-                    e1p += 1
-                    e2p += 1
-                else:
-                    if a1.type == a2.type:
-                        right_aligns += 1
-                    else:
-                        wrong_type += 1
-                    e1p += 1
-                    e2p += 1
-        else:
-            if a1.start == a2.start:
-                if a1.end < a2.end or a1.end > a2.end:
-                    if a1.type == a2.type:
-                        left_aligns += 1
-                    else:
-                        wrong_type += 1
-                    e1p += 1
-                    e2p += 1
-                else:
-                    if a1.type == a2.type:
+                if candidate.end == entity.end:
+                    if candidate.type == entity.type:
                         matches += 1
                     else:
                         wrong_type += 1
-                    e1p += 1
-                    e2p += 1
-            else:
-                if a1.start <= a2.end:
-                    if a1.end != a2.end:
-                        if a1.type == a2.type:
-                            overlaps += 1
-                        else:
-                            wrong_type += 1
-                        e1p += 1
-                        e2p += 1
-                    else:
-                        if a1.type == a2.type:
-                            right_aligns += 1
-                        else:
-                            wrong_type += 1
-                        e1p += 1
-                        e2p += 1
                 else:
-                    misses += 1
-                    e2p += 1
+                    left_aligns += 1
+
+
 
     return respond_with({"matches": matches, "left-aligns": left_aligns, "right-aligns": right_aligns,
                          "overlaps": overlaps, "misses": misses, "wrong-type": wrong_type})
 
 def get_entities_for_user_document(cursor, document_id, user_id):
-    cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
+    cursor.execute('SELECT E.ID, E."TYPE_ID", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
                     JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID \
                     WHERE UD.USER_ID = ? ORDER BY E.ID', (document_id, user_id))
-    annotations = []
+    annotations = list()
     for result in cursor.fetchall():
         annotations.append(Entity(id=result[0], type=result[1], start=result[2], end=result[3], user_doc_id=result[4]))
     return annotations
