@@ -5,6 +5,7 @@ from flask.ext.cors import CORS
 from flask_login import LoginManager, login_user, logout_user, current_user
 
 from collections import namedtuple
+from datetime import datetime
 
 from user import User
 
@@ -257,85 +258,90 @@ def return_entities():
     user1 = req['user1']
     user2 = req['user2']
     cursor = connection.cursor()
-    e1 = get_entities_for_user_document(cursor, document_id, user1)
-    e2 = get_entities_for_user_document(cursor, document_id, user2)
-    e1p, e2p = 0, 0
+    e1 = sorted(get_entities_for_user_document(cursor, document_id, user1), key=lambda x: x.start)
+    e2 = sorted(get_entities_for_user_document(cursor, document_id, user2), key=lambda x: x.start)
+    if len(e1) < len(e2):
+        shortList, longList = e1, e2
+    else:
+        shortList, longList = e2, e1
+
+    p = 0
     matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, 0
-    while True:
-        if e1p >= len(e1):
-            misses += len(e2) - e2p
-            break
-        if e2p >= len(e2):
-            misses += len(e1) - e1p
-            break
-        a1, a2 = e1[e1p], e2[e2p]
-        if a1.start < a2.start:
-            if a1.end < a2.start:
-                misses += 1
-                e1p += 1
-            else:
-                if (a1.end >= a2.start and a1.end < a2.end) or a1.end > a2.end:
-                    if a1.type == a2.type:
-                        overlaps += 1
-                    else:
-                        wrong_type += 1
-                    e1p += 1
-                    e2p += 1
-                else:
-                    if a1.type == a2.type:
-                        right_aligns += 1
-                    else:
-                        wrong_type += 1
-                    e1p += 1
-                    e2p += 1
-        else:
-            if a1.start == a2.start:
-                if a1.end < a2.end or a1.end > a2.end:
-                    if a1.type == a2.type:
-                        left_aligns += 1
-                    else:
-                        wrong_type += 1
-                    e1p += 1
-                    e2p += 1
-                else:
-                    if a1.type == a2.type:
-                        matches += 1
-                    else:
-                        wrong_type += 1
-                    e1p += 1
-                    e2p += 1
-            else:
-                if a1.start <= a2.end:
-                    if a1.end != a2.end:
-                        if a1.type == a2.type:
-                            overlaps += 1
-                        else:
-                            wrong_type += 1
-                        e1p += 1
-                        e2p += 1
-                    else:
-                        if a1.type == a2.type:
-                            right_aligns += 1
-                        else:
-                            wrong_type += 1
-                        e1p += 1
-                        e2p += 1
-                else:
+
+    for entity in longList:
+        while shortList[p].end < entity.start:
+            if p == len(shortList) - 1:
+                break
+            p += 1
+        can_miss = True
+        for candidate in shortList[p:]:
+            if candidate.start > entity.end:
+                if can_miss:
                     misses += 1
-                    e2p += 1
+                break
+            can_miss = False
+            if candidate.start != entity.start:
+                if candidate.end == entity.end:
+                    if candidate.type == entity.type:
+                        wrong_type += 1
+                    right_aligns += 1
+                else:
+                    if candidate.end < entity.start:
+                        misses += 1
+                    else:
+                        if candidate.type == entity.type:
+                            wrong_type += 1
+                        overlaps += 1
+            else:
+                if candidate.type == entity.type:
+                    wrong_type += 1
+                if candidate.end == entity.end:
+                    matches += 1
+                else:
+                    left_aligns += 1
+        if can_miss:
+            misses += 1
+
 
     return respond_with({"matches": matches, "left-aligns": left_aligns, "right-aligns": right_aligns,
                          "overlaps": overlaps, "misses": misses, "wrong-type": wrong_type})
 
 def get_entities_for_user_document(cursor, document_id, user_id):
-    cursor.execute('SELECT E.ID, E."TYPE", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
+    cursor.execute('SELECT E.ID, E."TYPE_ID", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
                     JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID \
                     WHERE UD.USER_ID = ? ORDER BY E.ID', (document_id, user_id))
-    annotations = []
+    annotations = list()
     for result in cursor.fetchall():
         annotations.append(Entity(id=result[0], type=result[1], start=result[2], end=result[3], user_doc_id=result[4]))
     return annotations
+
+@app.route('/import', methods=['POST'])
+def import_document():
+    if current_user.get_id() is None:
+        return "No user is logged in", 401
+
+    req = request.get_json()
+    document_id = req['document_id']
+    document_text = req['text']
+    document_visibility = 1
+    if 'visibility' in req:
+        document_visibility = int(req['visibility'])
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
+    result = cursor.fetchone()
+    if result[0] != 0:
+        return "A document with the ID '%s' already exists" % (document_id,), 409
+
+    cursor.execute("INSERT INTO LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?)", (document_id, document_text))
+    connection.commit()
+
+    cursor.execute("INSERT INTO LEARNING_TO_NOTE.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
+                   (current_user.get_id() + '_' + document_id, current_user.get_id(), document_id,
+                    document_visibility, datetime.now(), datetime.now()))
+    connection.commit()
+    return "Document imported", 201
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
