@@ -114,19 +114,18 @@ def get_document(document_id):
         #TODO: handle being not successful
         return ""
 
-@app.route('/types')
-def get_types():
+def load_types():
     cursor = connection.cursor()
     #id, code, group_id, group, name
     cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP" FROM LEARNING_TO_NOTE.TYPES')
     types = list()
 
     for aType in cursor.fetchall():
-        types.append({"name": aType[0],
-                      "label": aType[1],
+        types.append({"code": aType[0],
+                      "name": aType[1],
                       "groupId": aType[2],
                       "group": aType[3]})
-    return respond_with({"entity_types": types})
+    return types
 
 def save_document(document_id, data):
     annotations = data['denotations']
@@ -185,6 +184,7 @@ def load_document(document_id):
     result['denotations'] = get_denotations(cursor, document_id)
     result['relations'] = get_relations(cursor, document_id)
     result['sourceid'] = document_id
+    result['config'] = {'entity types': load_types()}
     cursor.close()
     print result
     return respond_with(result)
