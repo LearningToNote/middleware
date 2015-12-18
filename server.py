@@ -5,6 +5,7 @@ from flask.ext.cors import CORS
 from flask_login import LoginManager, login_user, logout_user, current_user
 
 from collections import namedtuple
+from datetime import datetime
 
 from user import User
 
@@ -270,6 +271,33 @@ def get_entities_for_user_document(cursor, document_id, user_id):
     for result in cursor.fetchall():
         annotations.append(Entity(id=result[0], type=result[1], start=result[2], end=result[3], user_doc_id=result[4]))
     return annotations
+
+@app.route('/import', methods=['POST'])
+def import_document():
+    if current_user.get_id() is None:
+        return "No user is logged in", 401
+
+    req = request.get_json()
+    document_id = req['document_id']
+    document_text = req['text']
+    document_visibility = 1
+    if 'visibility' in req:
+        document_visibility = int(req['visibility'])
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
+    result = cursor.fetchone()
+    if result[0] != 0:
+        return "A document with the ID '%s' already exists" % (document_id,), 409
+
+    cursor.execute("INSERT INTO LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?)", (document_id, document_text))
+    connection.commit()
+
+    cursor.execute("INSERT INTO LEARNING_TO_NOTE.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
+                   (current_user.get_id() + '_' + document_id, current_user.get_id(), document_id,
+                    document_visibility, datetime.now(), datetime.now()))
+    connection.commit()
+    return "Document imported", 201
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
