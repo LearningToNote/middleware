@@ -225,9 +225,9 @@ def return_entities():
 
     for entity in longList:
         while shortList[p].end < entity.start:
-            p += 1
             if p == len(shortList) - 1:
                 break
+            p += 1
         can_miss = True
         for candidate in shortList[p:]:
             if candidate.start > entity.end:
@@ -237,18 +237,25 @@ def return_entities():
             can_miss = False
             if candidate.start != entity.start:
                 if candidate.end == entity.end:
+                    if candidate.type == entity.type:
+                        wrong_type += 1
                     right_aligns += 1
                 else:
-                    overlaps += 1
-            else:
-                if candidate.end == entity.end:
-                    if candidate.type == entity.type:
-                        matches += 1
+                    if candidate.end < entity.start:
+                        misses += 1
                     else:
-                        wrong_type += 1
+                        if candidate.type == entity.type:
+                            wrong_type += 1
+                        overlaps += 1
+            else:
+                if candidate.type == entity.type:
+                    wrong_type += 1
+                if candidate.end == entity.end:
+                    matches += 1
                 else:
                     left_aligns += 1
-
+        if can_miss:
+            misses += 1
 
 
     return respond_with({"matches": matches, "left-aligns": left_aligns, "right-aligns": right_aligns,
