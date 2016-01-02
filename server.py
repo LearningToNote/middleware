@@ -2,7 +2,7 @@ import json, pyhdb, os, sys
 
 from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
-from flask_login import LoginManager, login_user, logout_user, current_user
+from flask_login import LoginManager, login_user, logout_user, current_user, login_required
 
 from collections import namedtuple
 from datetime import datetime
@@ -55,7 +55,7 @@ def login():
     if req and 'username' in req and 'password' in req:
         user = load_user(req['username'])
         if user and req['password'] == user.token:
-            login_user(user)
+            login_user(user, remember=True)
             user.token = None
             return respond_with(user.__dict__)
     return "Not authorized", 401
@@ -107,13 +107,16 @@ def get_documents():
 
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST'])
+@login_required
 def get_document(document_id):
     if request.method == 'GET':
         return load_document(document_id)
     else:
         successful = save_document(document_id, request.get_json())
-        #TODO: handle being not successful
-        return ""
+        if successful:
+            return ""
+        else:
+            return json.dumps({ "error": "Something went wrong while saving the data. Try again later." }), 500
 
 def load_types():
     cursor = connection.cursor()
@@ -131,15 +134,39 @@ def load_types():
 def save_document(document_id, data):
     annotations = data['denotations']
     successful = True
+    print "Saving document " + str(document_id) + " for user " + str(current_user.get_id())
     user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-    successful &= save_annotations(document_id, annotations)
+    delete_annotation_data(user_doc_id)
+    print "Did load user_doc_id: " + str(user_doc_id)
+    successful &= save_annotations(user_doc_id, annotations)
     if successful:
+        print "saved annotations successfully"
         id_map = {}
         #neccessary, as TextAE does not create "originalId"s
         for annotation in annotations:
             id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
-        successful &= save_relations(document_id, data['relations'], id_map)
+        print "saving relations"
+        successful &= save_relations(user_doc_id, data['relations'], id_map)
+        if successful:
+            print "saved relations successfully"
+        else:
+            print "did not save relations successfully"
+    else:
+        print "did not save annotations successfully"
     return successful
+
+def delete_annotation_data(user_doc_id):
+    cursor = connection.cursor()
+    print "Deleting old information..."
+    print "Deleting existing pairs..."
+    cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID = ?", (user_doc_id,))
+    connection.commit()
+    print "Deleting existing offsets..."
+    cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID = ?", (user_doc_id,))
+    connection.commit()
+    print "Deleting existing annotations..."
+    cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID = ?", (user_doc_id,))
+    connection.commit()
 
 def save_annotations(user_doc_id, annotations):
     #only save annotations from the current user, defined as userId 0 at loading time
@@ -147,34 +174,36 @@ def save_annotations(user_doc_id, annotations):
     cursor = connection.cursor()
     if not user_doc_id:
         return False
-    # delete entities for this user document
-    cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID = ?", (user_doc_id,))
-    connection.commit()
     #TODO: insert/update types
     # insert new entities and offsets
-    #TODO: adapt the schema so that the entity primary key consists of user_doc_id + entitiy_id
+    print "inserting new annotations..."
     annotation_tuples = map(lambda annotation: (annotation.get('originalId', annotation['id']), user_doc_id, annotation['obj']), annotations)
     #TODO: handle TYPE_ID and TEXT
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, USER_DOC_ID, LABEL) VALUES (?, ?, ?)", annotation_tuples)
-    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], annotation.get('originalId', annotation['id'])), annotations)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?)", offset_tuples)
+    print "inserting new offsets..."
+    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], annotation.get('originalId', annotation['id']), user_doc_id), annotations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?, ?)", offset_tuples)
     connection.commit()
+    return True
 
-def save_relations(document_id, relations, id_map):
+def save_relations(user_doc_id, relations, id_map):
     cursor = connection.cursor()
-    relation_tuples = map(lambda relation: (id_map[relation['subj']], id_map[relation['obj']], 1, relation['pred']), relations)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, DDI, TYPE) VALUES (?, ?, ?, ?)",
+    relation_tuples = map(lambda relation: (id_map[relation['subj']], id_map[relation['obj']], user_doc_id, 1, None, relation['pred']), relations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)",
                         relation_tuples)
     connection.commit()
+    return True
 
 def load_user_doc_id(document_id, user_id):
     cursor = connection.cursor()
     user_id = current_user.get_id()
     # get user document id
-    cursor.execute("SELECT ID FROM USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?", (document_id, user_id))
+    cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?", (document_id, user_id))
     result = cursor.fetchone()
     if result:
-        return str(result[0].read())
+        return str(result[0])
+    else:
+        cursor.execute
     return None
 
 def load_document(document_id):
@@ -202,7 +231,7 @@ def get_denotations(cursor, document_id):
     cursor.execute('SELECT E.ID, T.CODE, O."START", O."END", UD.USER_ID FROM LEARNING_TO_NOTE.ENTITIES E \
                     JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID\
-                    JOIN LEARNING_TO_NOTE.TYPES T ON E.TYPE_ID = T.ID \
+                    LEFT OUTER JOIN LEARNING_TO_NOTE.TYPES T ON E.TYPE_ID = T.ID \
                     WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ?\
                     ORDER BY E.ID', (document_id, current_user.get_id()))
     denotations = []
