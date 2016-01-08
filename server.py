@@ -115,14 +115,20 @@ def get_documents():
     return respond_with(documents)
 
 
-@app.route('/documents/<document_id>', methods=['GET', 'POST'])
+@app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
 def get_document(document_id):
     if request.method == 'GET':
         return load_document(document_id)
-    else:
+    if request.method == 'POST':
         successful = save_document(document_id, request.get_json())
         #TODO: handle being not successful
         return ""
+    if request.method == 'DELETE':
+        successful = delete_document(document_id)
+        if not successful:
+            return 'Deletion unsuccessful.', 500
+        else:
+            return 'Deleted.', 200
 
 
 def load_types():
@@ -267,6 +273,24 @@ def get_relations(cursor, document_id):
         relation['pred'] = str(result[3])
         relations.append(relation)
     return relations
+
+
+def delete_document(document_id):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
+        user_document_ids = map(lambda t: t[0], cursor.fetchall())
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
+        cursor.close()
+        connection.commit()
+        return True
+    except Exception, e:
+        raise e
+        return False
 
 
 @app.route('/evaluate', methods=['POST'])
