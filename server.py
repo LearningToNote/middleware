@@ -30,6 +30,7 @@ login_manager = LoginManager()
 login_manager.session_protection = None
 login_manager.init_app(app)
 
+
 def init():
     global connection
 
@@ -45,9 +46,11 @@ def init():
 
     app.run(host='0.0.0.0',port=8080,debug=True,ssl_context=context)
 
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.get(user_id, connection.cursor())
+
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -60,14 +63,17 @@ def login():
             return respond_with(user.__dict__)
     return "Not authorized", 401
 
+
 @app.route('/logout', methods=['GET', 'POST'])
 def logout():
     logout_user()
     return "", 200
 
+
 @app.route('/current_user')
 def get_current_user():
     return respond_with(current_user.__dict__)
+
 
 @app.route('/users')
 def get_users():
@@ -76,6 +82,7 @@ def get_users():
     cursor.close()
     return respond_with(map(lambda user: user.__dict__, users))
 
+
 @app.route('/users/<user_id>')
 def get_user(user_id):
     user = load_user(user_id)
@@ -83,6 +90,7 @@ def get_user(user_id):
         return "User not found", 404
     user.token = None
     return respond_with(user.__dict__)
+
 
 @app.route('/user_documents/<user_id>')
 def get_user_documents(user_id):
@@ -94,6 +102,7 @@ def get_user_documents(user_id):
                                "created_at": str(result[4]), "updated_at": str(result[5])})
     cursor.close()
     return respond_with(user_documents)
+
 
 @app.route('/documents')
 def get_documents():
@@ -115,6 +124,7 @@ def get_document(document_id):
         #TODO: handle being not successful
         return ""
 
+
 def load_types():
     cursor = connection.cursor()
     #id, code, group_id, group, name
@@ -128,6 +138,7 @@ def load_types():
                       "group": aType[3]})
     return types
 
+
 def save_document(document_id, data):
     annotations = data['denotations']
     successful = True
@@ -140,6 +151,7 @@ def save_document(document_id, data):
             id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
         successful &= save_relations(document_id, data['relations'], id_map)
     return successful
+
 
 def save_annotations(user_doc_id, annotations):
     #only save annotations from the current user, defined as userId 0 at loading time
@@ -160,12 +172,14 @@ def save_annotations(user_doc_id, annotations):
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?)", offset_tuples)
     connection.commit()
 
+
 def save_relations(document_id, relations, id_map):
     cursor = connection.cursor()
     relation_tuples = map(lambda relation: (id_map[relation['subj']], id_map[relation['obj']], 1, relation['pred']), relations)
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, DDI, TYPE) VALUES (?, ?, ?, ?)",
                         relation_tuples)
     connection.commit()
+
 
 def load_user_doc_id(document_id, user_id):
     cursor = connection.cursor()
@@ -176,6 +190,7 @@ def load_user_doc_id(document_id, user_id):
     if result:
         return str(result[0].read())
     return None
+
 
 def load_document(document_id):
     cursor = connection.cursor()
@@ -189,6 +204,7 @@ def load_document(document_id):
     cursor.close()
     print result
     return respond_with(result)
+
 
 def get_text(cursor, document_id):
     cursor.execute("SELECT TEXT FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
@@ -233,6 +249,7 @@ def get_denotations(cursor, document_id):
         previous_id = str(result[0])
     return denotations
 
+
 def get_relations(cursor, document_id):
     current_user_id = current_user.get_id()
     cursor.execute("SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL FROM LEARNING_TO_NOTE.PAIRS P \
@@ -251,6 +268,7 @@ def get_relations(cursor, document_id):
         relations.append(relation)
     return relations
 
+
 @app.route('/evaluate', methods=['POST'])
 def return_entities():
     req = request.get_json()
@@ -266,7 +284,7 @@ def return_entities():
         shortList, longList = e2, e1
 
     p = 0
-    matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, 0
+    matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, {}
 
     for entity in longList:
         while shortList[p].end < entity.start:
@@ -282,29 +300,31 @@ def return_entities():
             can_miss = False
             if candidate.start != entity.start:
                 if candidate.end == entity.end:
-                    if candidate.type == entity.type:
-                        wrong_type += 1
+                    if candidate.type != entity.type:
+                        wrong_type["right-aligns"] = wrong_type.get("right-aligns", 0) + 1
                     right_aligns += 1
                 else:
                     if candidate.end < entity.start:
                         misses += 1
                     else:
-                        if candidate.type == entity.type:
-                            wrong_type += 1
+                        if candidate.type != entity.type:
+                            wrong_type["overlaps"] = wrong_type.get("overlaps", 0) + 1
                         overlaps += 1
             else:
-                if candidate.type == entity.type:
-                    wrong_type += 1
                 if candidate.end == entity.end:
+                    if candidate.type != entity.type:
+                        wrong_type["matches"] = wrong_type.get("matches", 0) + 1
                     matches += 1
                 else:
+                    if candidate.type != entity.type:
+                        wrong_type["left-aligns"] = wrong_type.get("left-aligns", 0) + 1
                     left_aligns += 1
         if can_miss:
             misses += 1
 
-
     return respond_with({"matches": matches, "left-aligns": left_aligns, "right-aligns": right_aligns,
                          "overlaps": overlaps, "misses": misses, "wrong-type": wrong_type})
+
 
 def get_entities_for_user_document(cursor, document_id, user_id):
     cursor.execute('SELECT E.ID, E."TYPE_ID", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
@@ -315,6 +335,7 @@ def get_entities_for_user_document(cursor, document_id, user_id):
     for result in cursor.fetchall():
         annotations.append(Entity(id=result[0], type=result[1], start=result[2], end=result[3], user_doc_id=result[4]))
     return annotations
+
 
 @app.route('/import', methods=['POST'])
 def import_document():
@@ -343,8 +364,10 @@ def import_document():
     connection.commit()
     return "Document imported", 201
 
+
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
+
 
 if __name__ == '__main__':
     init()
