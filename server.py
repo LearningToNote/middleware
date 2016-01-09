@@ -194,7 +194,11 @@ def save_annotations(user_doc_id, annotations):
     for current_type in types:
         print current_type
         cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.TYPES WHERE CODE = ?", (current_type,))
-        result = cursor.fetchone()[0]
+        result = cursor.fetchone()
+        if result:
+            result = result[0]
+        else:
+            return False
         type_id_dict[current_type] = str(result)
     print type_id_dict
     print "inserting new annotations..."
@@ -213,12 +217,11 @@ def save_annotations(user_doc_id, annotations):
 
 def save_relations(user_doc_id, relations, id_map):
     cursor = connection.cursor()
-    relation_tuples = map(lambda relation: (id_map[relation['subj']], id_map[relation['obj']], user_doc_id, 1, None, relation['pred']), relations)
+    relation_tuples = map(lambda relation: (id_map[relation['subj']], id_map[relation['obj']], user_doc_id, 1, None, relation.get('pred', None)), relations)
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)",
                         relation_tuples)
     connection.commit()
     return True
-
 
 def load_user_doc_id(document_id, user_id):
     cursor = connection.cursor()
