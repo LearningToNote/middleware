@@ -174,12 +174,23 @@ def save_annotations(user_doc_id, annotations):
     cursor = connection.cursor()
     if not user_doc_id:
         return False
-    #TODO: insert/update types
-    # insert new entities and offsets
+    print "loading type ids...."
+    type_id_dict = {}
+    types = set(map(lambda annotation: (annotation['obj']['code']), annotations))
+    for current_type in types:
+        print current_type
+        cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.TYPES WHERE CODE = ?", (current_type,))
+        result = cursor.fetchone()[0]
+        type_id_dict[current_type] = str(result)
+    print type_id_dict
     print "inserting new annotations..."
-    annotation_tuples = map(lambda annotation: (annotation.get('originalId', annotation['id']), user_doc_id, annotation['obj']), annotations)
-    #TODO: handle TYPE_ID and TEXT
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, USER_DOC_ID, LABEL) VALUES (?, ?, ?)", annotation_tuples)
+    annotation_tuples = map(lambda annotation: (annotation.get('originalId',
+                                                annotation['id']),
+                                                user_doc_id,
+                                                type_id_dict.get(annotation['obj']['code'], None),
+                                                annotation['obj'].get('label', None)),
+                            annotations)
+    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) VALUES (?, ?, ?, ?)", annotation_tuples)
     print "inserting new offsets..."
     offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], annotation.get('originalId', annotation['id']), user_doc_id), annotations)
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?, ?)", offset_tuples)
@@ -228,7 +239,7 @@ def get_text(cursor, document_id):
     return text
 
 def get_denotations(cursor, document_id):
-    cursor.execute('SELECT E.ID, T.CODE, O."START", O."END", UD.USER_ID FROM LEARNING_TO_NOTE.ENTITIES E \
+    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, T."GROUP" FROM LEARNING_TO_NOTE.ENTITIES E \
                     JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID\
                     LEFT OUTER JOIN LEARNING_TO_NOTE.TYPES T ON E.TYPE_ID = T.ID \
@@ -242,7 +253,7 @@ def get_denotations(cursor, document_id):
     for result in cursor.fetchall():
         denotation = {}
         current_id = str(result[0])
-        creator = str(result[4])
+        creator = str(result[1])
         if current_id == previous_id:
             current_id += "_" + str(increment)
             increment += 1
@@ -250,8 +261,12 @@ def get_denotations(cursor, document_id):
             increment = 1
         if not user_id_mapping.get(creator):
             user_id_mapping[creator] = len(user_id_mapping)
+        anno_info = {"code": str(result[4]),
+                     "name": str(result[5]),
+                     "groupId": str(result[6]),
+                     "group": str(result[7])}
         denotation['id'] = current_id
-        denotation['obj'] = str(result[1])
+        denotation['obj'] = anno_info
         denotation['span'] = {}
         denotation['span']['begin'] = result[2]
         denotation['span']['end'] = result[3]
