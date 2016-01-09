@@ -30,6 +30,7 @@ login_manager = LoginManager()
 login_manager.session_protection = None
 login_manager.init_app(app)
 
+
 def init():
     global connection
 
@@ -45,9 +46,11 @@ def init():
 
     app.run(host='0.0.0.0',port=8080,debug=True,ssl_context=context)
 
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.get(user_id, connection.cursor())
+
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -60,14 +63,17 @@ def login():
             return respond_with(user.__dict__)
     return "Not authorized", 401
 
+
 @app.route('/logout', methods=['GET', 'POST'])
 def logout():
     logout_user()
     return "", 200
 
+
 @app.route('/current_user')
 def get_current_user():
     return respond_with(current_user.__dict__)
+
 
 @app.route('/users')
 def get_users():
@@ -76,6 +82,7 @@ def get_users():
     cursor.close()
     return respond_with(map(lambda user: user.__dict__, users))
 
+
 @app.route('/users/<user_id>')
 def get_user(user_id):
     user = load_user(user_id)
@@ -83,6 +90,7 @@ def get_user(user_id):
         return "User not found", 404
     user.token = None
     return respond_with(user.__dict__)
+
 
 @app.route('/user_documents/<user_id>')
 def get_user_documents(user_id):
@@ -95,6 +103,7 @@ def get_user_documents(user_id):
     cursor.close()
     return respond_with(user_documents)
 
+
 @app.route('/documents')
 def get_documents():
     cursor = connection.cursor()
@@ -106,17 +115,21 @@ def get_documents():
     return respond_with(documents)
 
 
-@app.route('/documents/<document_id>', methods=['GET', 'POST'])
-@login_required
+@app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
 def get_document(document_id):
     if request.method == 'GET':
         return load_document(document_id)
-    else:
+    if request.method == 'POST':
         successful = save_document(document_id, request.get_json())
-        if successful:
-            return ""
+        #TODO: handle being not successful
+        return ""
+    if request.method == 'DELETE':
+        successful = delete_document(document_id)
+        if not successful:
+            return 'Deletion unsuccessful.', 500
         else:
-            return json.dumps({ "error": "Something went wrong while saving the data. Try again later." }), 500
+            return 'Deleted.', 200
+
 
 def load_types():
     cursor = connection.cursor()
@@ -130,6 +143,7 @@ def load_types():
                       "groupId": aType[2],
                       "group": aType[3]})
     return types
+
 
 def save_document(document_id, data):
     annotations = data['denotations']
@@ -205,6 +219,7 @@ def save_relations(user_doc_id, relations, id_map):
     connection.commit()
     return True
 
+
 def load_user_doc_id(document_id, user_id):
     cursor = connection.cursor()
     user_id = current_user.get_id()
@@ -216,6 +231,7 @@ def load_user_doc_id(document_id, user_id):
     else:
         cursor.execute
     return None
+
 
 def load_document(document_id):
     cursor = connection.cursor()
@@ -229,6 +245,7 @@ def load_document(document_id):
     cursor.close()
     print result
     return respond_with(result)
+
 
 def get_text(cursor, document_id):
     cursor.execute("SELECT TEXT FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
@@ -277,6 +294,7 @@ def get_denotations(cursor, document_id):
         previous_id = str(result[0])
     return denotations
 
+
 def get_relations(cursor, document_id):
     current_user_id = current_user.get_id()
     cursor.execute("SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL FROM LEARNING_TO_NOTE.PAIRS P \
@@ -295,6 +313,25 @@ def get_relations(cursor, document_id):
         relations.append(relation)
     return relations
 
+
+def delete_document(document_id):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
+        user_document_ids = map(lambda t: t[0], cursor.fetchall())
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
+        cursor.close()
+        connection.commit()
+        return True
+    except Exception, e:
+        raise e
+        return False
+
+
 @app.route('/evaluate', methods=['POST'])
 def return_entities():
     req = request.get_json()
@@ -310,7 +347,7 @@ def return_entities():
         shortList, longList = e2, e1
 
     p = 0
-    matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, 0
+    matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, {}
 
     for entity in longList:
         while shortList[p].end < entity.start:
@@ -326,29 +363,31 @@ def return_entities():
             can_miss = False
             if candidate.start != entity.start:
                 if candidate.end == entity.end:
-                    if candidate.type == entity.type:
-                        wrong_type += 1
+                    if candidate.type != entity.type:
+                        wrong_type["right-aligns"] = wrong_type.get("right-aligns", 0) + 1
                     right_aligns += 1
                 else:
                     if candidate.end < entity.start:
                         misses += 1
                     else:
-                        if candidate.type == entity.type:
-                            wrong_type += 1
+                        if candidate.type != entity.type:
+                            wrong_type["overlaps"] = wrong_type.get("overlaps", 0) + 1
                         overlaps += 1
             else:
-                if candidate.type == entity.type:
-                    wrong_type += 1
                 if candidate.end == entity.end:
+                    if candidate.type != entity.type:
+                        wrong_type["matches"] = wrong_type.get("matches", 0) + 1
                     matches += 1
                 else:
+                    if candidate.type != entity.type:
+                        wrong_type["left-aligns"] = wrong_type.get("left-aligns", 0) + 1
                     left_aligns += 1
         if can_miss:
             misses += 1
 
-
     return respond_with({"matches": matches, "left-aligns": left_aligns, "right-aligns": right_aligns,
                          "overlaps": overlaps, "misses": misses, "wrong-type": wrong_type})
+
 
 def get_entities_for_user_document(cursor, document_id, user_id):
     cursor.execute('SELECT E.ID, E."TYPE_ID", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
@@ -359,6 +398,7 @@ def get_entities_for_user_document(cursor, document_id, user_id):
     for result in cursor.fetchall():
         annotations.append(Entity(id=result[0], type=result[1], start=result[2], end=result[3], user_doc_id=result[4]))
     return annotations
+
 
 @app.route('/import', methods=['POST'])
 def import_document():
@@ -387,8 +427,10 @@ def import_document():
     connection.commit()
     return "Document imported", 201
 
+
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
+
 
 if __name__ == '__main__':
     init()
