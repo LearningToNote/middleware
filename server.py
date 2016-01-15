@@ -161,6 +161,15 @@ def load_types():
     return types
 
 
+def load_type_id(code):
+    cursor = connection.cursor()
+    cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.TYPES WHERE CODE = ?", (code,))
+    result = cursor.fetchone()
+    if result:
+        return result[0]
+    return None
+
+
 def save_document(data, user_doc_id, document_id, user_id):
     annotations = data['denotations']
     successful = True
@@ -219,13 +228,11 @@ def save_annotations(user_doc_id, annotations):
     types = set(map(lambda annotation: (annotation['obj']['code']), filtered_annotations))
     for current_type in types:
         print current_type
-        cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.TYPES WHERE CODE = ?", (current_type,))
-        result = cursor.fetchone()
-        if result:
-            result = result[0]
+        type_id = load_type_id(current_type)
+        if type_id:
+            type_id_dict[current_type] = str(type_id)
         else:
             return False
-        type_id_dict[current_type] = str(result)
     print type_id_dict
     print "inserting new annotations..."
     annotation_tuples = map(lambda annotation: (annotation.get('originalId',
@@ -244,7 +251,23 @@ def save_annotations(user_doc_id, annotations):
 
 def save_relations(user_doc_id, relations, id_map):
     cursor = connection.cursor()
-    relation_tuples = map(lambda relation: (id_map[relation['subj']], id_map[relation['obj']], user_doc_id, 1, None, relation.get('pred', None)), relations)
+    print "loading type ids...."
+    type_id_dict = {}
+    types = set(map(lambda relation: (relation['pred']['code']), relations))
+    for current_type in types:
+        print current_type
+        type_id = load_type_id(current_type)
+        if type_id:
+            type_id_dict[current_type] = str(type_id)
+        else:
+            return False
+
+    relation_tuples = map(lambda relation: (id_map[relation['subj']],
+                                            id_map[relation['obj']],
+                                            user_doc_id, 1,
+                                            type_id_dict.get(relation['pred']['code'], None),
+                                            relation['pred'].get('label', None)),
+                        relations)
     cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)",
                         relation_tuples)
     connection.commit()
@@ -267,11 +290,13 @@ def load_document(document_id, user_id):
     cursor = connection.cursor()
     result = {}
     print "Loading information for document_id: " + str(document_id) + " and user: " + str(current_user.get_id())
+    default_types = load_types()
     result['text'] = get_text(cursor, document_id)
     result['denotations'] = get_denotations(cursor, document_id, user_id)
     result['relations'] = get_relations(cursor, document_id, user_id)
     result['sourceid'] = document_id
-    result['config'] = {'entity types': load_types()}
+    result['config'] = {'entity types':   default_types,
+                        'relation types': default_types}
     cursor.close()
     return result
 
@@ -326,19 +351,25 @@ def get_denotations(cursor, document_id, user_id):
 
 
 def get_relations(cursor, document_id, user_id):
-    cursor.execute("SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL FROM LEARNING_TO_NOTE.PAIRS P \
+    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", T.GROUP_ID, T."GROUP" FROM LEARNING_TO_NOTE.PAIRS P \
+        LEFT OUTER JOIN LEARNING_TO_NOTE.TYPES T ON P.TYPE_ID = T.ID \
         JOIN LEARNING_TO_NOTE.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1 AND P.USER_DOC_ID = E1.USER_DOC_ID\
         JOIN LEARNING_TO_NOTE.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1 AND P.USER_DOC_ID = E2.USER_DOC_ID\
-        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO1 ON E1.USER_DOC_ID = UO1.ID AND UO1.DOCUMENT_ID = ? AND UO1.USER_ID = ?\
-        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UO2 ON E2.USER_DOC_ID = UO2.ID AND UO2.DOCUMENT_ID = ? AND UO2.USER_ID = ?",
+        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD1 ON E1.USER_DOC_ID = UD1.ID AND UD1.DOCUMENT_ID = ? AND (UD1.USER_ID = ? OR UD1.VISIBILITY = 1) \
+        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD2 ON E2.USER_DOC_ID = UD2.ID AND UD2.DOCUMENT_ID = ? AND (UD2.USER_ID = ? OR UD2.VISIBILITY = 1)',
         (document_id, user_id, document_id, user_id))
     relations = []
     for result in cursor.fetchall():
+        type_info = {"code":    str(result[4]),
+                     "name":    str(result[5]),
+                     "groupId": str(result[6]),
+                     "group":   str(result[7]),
+                     "label":   str(result[3])}
         relation = {}
         relation['id'] = str(result[0])
         relation['subj'] = str(result[1])
         relation['obj'] = str(result[2])
-        relation['pred'] = str(result[3])
+        relation['pred'] = type_info
         relations.append(relation)
     return relations
 
