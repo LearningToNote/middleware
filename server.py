@@ -229,7 +229,7 @@ def save_annotations(user_doc_id, annotations):
     for current_type in types:
         print current_type
         type_id = load_type_id(current_type)
-        if type_id:
+        if type_id is not None:
             type_id_dict[current_type] = str(type_id)
         else:
             return False
@@ -257,7 +257,7 @@ def save_relations(user_doc_id, relations, id_map):
     for current_type in types:
         print current_type
         type_id = load_type_id(current_type)
-        if type_id:
+        if type_id is not None:
             type_id_dict[current_type] = str(type_id)
         else:
             return False
