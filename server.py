@@ -104,6 +104,16 @@ def get_user_documents(user_id):
     return respond_with(user_documents)
 
 
+@app.route('/user_documents/<user_document_id>', methods=['DELETE'])
+def manage_user_documents(user_document_id):
+    if request.method == 'DELETE':
+        successful = delete_user_document(user_document_id)
+        if not successful:
+            return 'Deletion unsuccessful.', 500
+        else:
+            return 'Deleted.', 200
+
+
 @app.route('/documents')
 def get_documents():
     cursor = connection.cursor()
@@ -374,22 +384,36 @@ def get_relations(cursor, document_id, user_id):
     return relations
 
 
+def delete_user_document(user_document_id):
+    return delete_user_documents([user_document_id])
+
+
+def delete_user_documents(user_document_ids):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID IN (?)", (user_document_ids,))
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE ID IN (?)", (user_document_ids,))
+        cursor.close()
+        connection.commit()
+        return True
+    except Exception, e:
+        raise e
+
+
 def delete_document(document_id):
     try:
         cursor = connection.cursor()
         cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
         user_document_ids = map(lambda t: t[0], cursor.fetchall())
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID IN (?)", (user_document_ids,))
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
+        delete_user_documents(user_document_ids)
         cursor.execute("DELETE FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
         cursor.close()
         connection.commit()
         return True
     except Exception, e:
         raise e
-        return False
 
 
 @app.route('/evaluate', methods=['POST'])
