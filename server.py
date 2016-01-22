@@ -99,7 +99,7 @@ def get_user_documents(user_id):
     user_documents = list()
     for result in cursor.fetchall():
         user_documents.append({"id": result[0], "user_id": result[1], "document_id": result[2], "visibility": result[3],
-                               "created_at": str(result[4]), "updated_at": str(result[5])})
+                               "created_at": result[4].strftime('%Y-%m-%d %H:%M:%S'), "updated_at": result[5].strftime('%Y-%m-%d %H:%M:%S')})
     cursor.close()
     return respond_with(user_documents)
 
@@ -208,8 +208,9 @@ def create_user_doc_if_not_existent(user_doc_id, document_id, user_id):
     cursor.execute("SELECT 1 FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE ID = ?", (user_doc_id,))
     result = cursor.fetchone()
     if not result:
+        date = datetime.now()
         cursor.execute("INSERT INTO LEARNING_TO_NOTE.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
-            (user_doc_id, user_id, document_id, 1, datetime.now(), datetime.now()))
+            (user_doc_id, user_id, document_id, 1, date, date))
         connection.commit()
 
 
