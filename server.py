@@ -95,11 +95,13 @@ def get_user(user_id):
 @app.route('/user_documents/<user_id>')
 def get_user_documents(user_id):
     cursor = connection.cursor()
-    cursor.execute("SELECT * FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE USER_ID = ? OR VISIBILITY > 0", (user_id,))
+    cursor.execute("SELECT * FROM LEARNING_TO_NOTE.USER_DOCUMENTS "
+                   "WHERE USER_ID = ? OR VISIBILITY > 0 ORDER BY ID", (user_id,))
     user_documents = list()
     for result in cursor.fetchall():
         user_documents.append({"id": result[0], "user_id": result[1], "document_id": result[2], "visibility": result[3],
-                               "created_at": result[4].strftime('%Y-%m-%d %H:%M:%S'), "updated_at": result[5].strftime('%Y-%m-%d %H:%M:%S')})
+                               "created_at": result[4].strftime('%Y-%m-%d %H:%M:%S'),
+                               "updated_at": result[5].strftime('%Y-%m-%d %H:%M:%S')})
     cursor.close()
     return respond_with(user_documents)
 
