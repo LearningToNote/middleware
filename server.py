@@ -44,7 +44,7 @@ def init():
         password=secrets['password']
     )
 
-    app.run(host='0.0.0.0',port=8080,debug=True,ssl_context=context)
+    app.run(host='0.0.0.0', port=8080, debug=True, ssl_context=context)
 
 
 @login_manager.user_loader
