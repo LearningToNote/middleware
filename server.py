@@ -33,8 +33,7 @@ login_manager.init_app(app)
 
 def init():
     try_reconnecting()
-
-    app.run(host='0.0.0.0',port=8080,debug=True,ssl_context=context)
+    app.run(host='0.0.0.0', port=8080, debug=True, ssl_context=context)
 
 
 def reset_connection():
@@ -109,12 +108,16 @@ def get_user(user_id):
 
 @app.route('/user_documents/<user_id>')
 def get_user_documents(user_id):
+    if user_id != current_user.get_id():
+        return "Not authorized to view the documents of this user.", 401
     cursor = connection.cursor()
-    cursor.execute("SELECT * FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE USER_ID = ? OR VISIBILITY > 0", (user_id,))
+    cursor.execute("SELECT * FROM LEARNING_TO_NOTE.USER_DOCUMENTS "
+                   "WHERE USER_ID = ? OR VISIBILITY > 0 ORDER BY ID", (user_id,))
     user_documents = list()
     for result in cursor.fetchall():
         user_documents.append({"id": result[0], "user_id": result[1], "document_id": result[2], "visibility": result[3],
-                               "created_at": str(result[4]), "updated_at": str(result[5])})
+                               "created_at": result[4].strftime('%Y-%m-%d %H:%M:%S'),
+                               "updated_at": result[5].strftime('%Y-%m-%d %H:%M:%S')})
     cursor.close()
     return respond_with(user_documents)
 
@@ -239,8 +242,9 @@ def create_user_doc_if_not_existent(user_doc_id, document_id, user_id):
     cursor.execute("SELECT 1 FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE ID = ?", (user_doc_id,))
     result = cursor.fetchone()
     if not result:
+        date = datetime.now()
         cursor.execute("INSERT INTO LEARNING_TO_NOTE.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
-            (user_doc_id, user_id, document_id, 1, datetime.now(), datetime.now()))
+            (user_doc_id, user_id, document_id, 1, date, date))
         connection.commit()
 
 
@@ -513,6 +517,13 @@ def get_entities_for_user_document(cursor, document_id, user_id):
     for result in cursor.fetchall():
         annotations.append(Entity(id=result[0], type=result[1], start=result[2], end=result[3], user_doc_id=result[4]))
     return annotations
+
+
+@app.route('/pubmed/<pubmed_id>')
+def fetch_pubmed_abstract(pubmed_id):
+    from metapub import PubMedFetcher
+    article = PubMedFetcher(cachedir=".cache/").article_by_pmid(pubmed_id)
+    return article.abstract
 
 
 @app.route('/import', methods=['POST'])
