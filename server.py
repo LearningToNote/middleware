@@ -94,6 +94,8 @@ def get_user(user_id):
 
 @app.route('/user_documents/<user_id>')
 def get_user_documents(user_id):
+    if user_id != current_user.get_id():
+        return "Not authorized to view the documents of this user.", 401
     cursor = connection.cursor()
     cursor.execute("SELECT * FROM LEARNING_TO_NOTE.USER_DOCUMENTS "
                    "WHERE USER_ID = ? OR VISIBILITY > 0 ORDER BY ID", (user_id,))
