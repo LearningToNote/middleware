@@ -32,19 +32,34 @@ login_manager.init_app(app)
 
 
 def init():
-    global connection
-
-    with open(SERVER_ROOT + "/secrets.json") as f:
-        secrets = json.load(f)
-
-    connection = pyhdb.connect(
-        host=secrets['host'],
-        port=secrets['port'],
-        user=secrets['username'],
-        password=secrets['password']
-    )
+    try_reconnecting()
 
     app.run(host='0.0.0.0',port=8080,debug=True,ssl_context=context)
+
+
+def reset_connection():
+    global connection
+    if not connection is None:
+        try:
+            connection.close()
+        except Exception, e:
+            print e
+    connection = None
+
+
+def try_reconnecting():
+    try:
+        global connection
+        with open(SERVER_ROOT + "/secrets.json") as f:
+            secrets = json.load(f)
+        connection = pyhdb.connect(
+            host=secrets['host'],
+            port=secrets['port'],
+            user=secrets['username'],
+            password=secrets['password']
+        )
+    except Exception, e:
+        print e
 
 
 @login_manager.user_loader
@@ -127,17 +142,34 @@ def get_documents():
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
 def get_document(document_id):
+    if connection is None:
+            try_reconnecting()
     if request.method == 'GET':
-        return respond_with(load_document(document_id, current_user.get_id()))
+        try:
+            result = load_document(document_id, current_user.get_id())
+            return respond_with(result)
+        except Exception, e:
+            reset_connection()
+            return 'Error while loading the document.', 500
     if request.method == 'POST':
-        user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-        successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id())
+        successful = False
+        try:
+            user_doc_id = load_user_doc_id(document_id, current_user.get_id())
+            successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id())
+        except Exception, e:
+            print e
+            reset_connection()
         if successful:
             return ""
         else:
             return "An error occured while saving the document.", 500
     if request.method == 'DELETE':
-        successful = delete_document(document_id)
+        successful = False
+        try:
+            successful = delete_document(document_id)
+        except Exception, e:
+            print e
+            reset_connection()
         if not successful:
             return 'Deletion unsuccessful.', 500
         else:
@@ -147,7 +179,6 @@ def get_document(document_id):
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
-    print data
     document_data = load_document(data['document_id'], data['user_id'])
     user_doc_id = load_user_doc_id(data['document_id'], "victor_predictor")
     successful = save_document(document_data, user_doc_id, data['document_id'], "victor_predictor")
@@ -215,7 +246,7 @@ def create_user_doc_if_not_existent(user_doc_id, document_id, user_id):
 
 def delete_annotation_data(user_doc_id):
     cursor = connection.cursor()
-    print "Deleting old information..."
+    print "Deleting old information for " + str(user_doc_id) + "..."
     print "Deleting existing pairs..."
     cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID = ?", (user_doc_id,))
     connection.commit()
