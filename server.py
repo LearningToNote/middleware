@@ -38,7 +38,7 @@ def init():
 
 def reset_connection():
     global connection
-    if not connection is None:
+    if connection is not None:
         try:
             connection.close()
         except Exception, e:
@@ -146,7 +146,7 @@ def get_documents():
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
 def get_document(document_id):
     if connection is None:
-            try_reconnecting()
+        try_reconnecting()
     if request.method == 'GET':
         try:
             result = load_document(document_id, current_user.get_id())
@@ -193,7 +193,6 @@ def predict():
 
 def load_types():
     cursor = connection.cursor()
-    #id, code, group_id, group, name
     cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP" FROM LEARNING_TO_NOTE.TYPES ORDER BY "GROUP" DESC')
     types = list()
 
@@ -321,13 +320,10 @@ def save_relations(user_doc_id, relations, id_map):
 
 def load_user_doc_id(document_id, user_id):
     cursor = connection.cursor()
-    # get user document id
     cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?", (document_id, user_id))
     result = cursor.fetchone()
     if result:
         return str(result[0])
-    else:
-        cursor.execute
     return str(user_id) + "_" + str(document_id)
 
 
