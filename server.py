@@ -484,6 +484,13 @@ def get_entities_for_user_document(cursor, document_id, user_id):
     return annotations
 
 
+@app.route('/pubmed/<pubmed_id>')
+def fetch_pubmed_abstract(pubmed_id):
+    from metapub import PubMedFetcher
+    article = PubMedFetcher(cachedir=".cache/").article_by_pmid(pubmed_id)
+    return article.abstract
+
+
 @app.route('/import', methods=['POST'])
 def import_document():
     if current_user.get_id() is None:
