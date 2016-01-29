@@ -423,13 +423,13 @@ def delete_user_document(user_document_id):
 
 
 def delete_user_documents(user_document_ids):
+    user_document_ids = "('" + "', '".join(user_document_ids) + "')"
     try:
         cursor = connection.cursor()
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID IN (?)", (user_document_ids,))
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID IN (?)", (user_document_ids,))
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE ID IN (?)", (user_document_ids,))
-        cursor.close()
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID IN " + user_document_ids)
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID IN  " + user_document_ids)
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID IN " + user_document_ids)
+        cursor.execute("DELETE FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE ID IN " + user_document_ids)
         connection.commit()
         return True
     except Exception, e:
@@ -443,7 +443,6 @@ def delete_document(document_id):
         user_document_ids = map(lambda t: t[0], cursor.fetchall())
         delete_user_documents(user_document_ids)
         cursor.execute("DELETE FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
-        cursor.close()
         connection.commit()
         return True
     except Exception, e:
