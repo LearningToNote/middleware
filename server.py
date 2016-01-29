@@ -68,6 +68,8 @@ def load_user(user_id):
 
 @app.route('/login', methods=['POST'])
 def login():
+    if connection is None:
+        try_reconnecting()
     req = request.get_json()
     if req and 'username' in req and 'password' in req:
         user = load_user(req['username'])
@@ -352,7 +354,7 @@ def get_text(cursor, document_id):
 
 
 def get_denotations(cursor, document_id, user_id):
-    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, T."GROUP" FROM LEARNING_TO_NOTE.ENTITIES E \
+    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, T."GROUP", E."LABEL" FROM LEARNING_TO_NOTE.ENTITIES E \
                     JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID\
                     LEFT OUTER JOIN LEARNING_TO_NOTE.TYPES T ON E.TYPE_ID = T.ID \
@@ -377,7 +379,8 @@ def get_denotations(cursor, document_id, user_id):
         anno_info = {"code": str(result[4]),
                      "name": str(result[5]),
                      "groupId": str(result[6]),
-                     "group": str(result[7])}
+                     "group": str(result[7]),
+                     "label": str(result[8])}
         denotation['id'] = current_id
         denotation['obj'] = anno_info
         denotation['span'] = {}
