@@ -30,6 +30,8 @@ login_manager = LoginManager()
 login_manager.session_protection = None
 login_manager.init_app(app)
 
+PREDICTION_USER = 'victor_predictor'
+
 
 def init():
     try_reconnecting()
@@ -185,8 +187,8 @@ def get_document(document_id):
 def predict():
     data = request.get_json()
     document_data = load_document(data['document_id'], data['user_id'])
-    user_doc_id = load_user_doc_id(data['document_id'], "victor_predictor")
-    successful = save_document(document_data, user_doc_id, data['document_id'], "victor_predictor")
+    user_doc_id = load_user_doc_id(data['document_id'], PREDICTION_USER)
+    successful = save_document(document_data, user_doc_id, data['document_id'], PREDICTION_USER)
     if successful:
         return "OK"
     else:
@@ -364,7 +366,7 @@ def get_denotations(cursor, document_id, user_id):
     increment = 1
     previous_id = None
     #todo: handle being not logged in
-    user_id_mapping = {current_user.get_id(): 0}
+    user_id_mapping = {current_user.get_id(): 0, PREDICTION_USER: -1}
     for result in cursor.fetchall():
         denotation = {}
         current_id = str(result[0])
