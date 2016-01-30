@@ -76,10 +76,10 @@ def login():
     if req and 'username' in req and 'password' in req:
         try:
             user = load_user(req['username'])
-        if user and req['password'] == user.token:
-            login_user(user, remember=True)
-            user.token = None
-            return respond_with(user.__dict__)
+            if user and req['password'] == user.token:
+                login_user(user, remember=True)
+                user.token = None
+                return respond_with(user.__dict__)
         except Exception, e:
             reset_connection()
     return "Not authorized", 401
