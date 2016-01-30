@@ -74,11 +74,14 @@ def login():
         try_reconnecting()
     req = request.get_json()
     if req and 'username' in req and 'password' in req:
-        user = load_user(req['username'])
+        try:
+            user = load_user(req['username'])
         if user and req['password'] == user.token:
             login_user(user, remember=True)
             user.token = None
             return respond_with(user.__dict__)
+        except Exception, e:
+            reset_connection()
     return "Not authorized", 401
 
 
