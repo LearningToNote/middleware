@@ -119,10 +119,10 @@ def get_user_documents(user_id):
         return "Not authorized to view the documents of this user.", 401
     cursor = connection.cursor()
     cursor.execute("SELECT * FROM LEARNING_TO_NOTE.USER_DOCUMENTS "
-                   "WHERE USER_ID = ? OR VISIBILITY > 0 ORDER BY ID", (user_id,))
+                   "WHERE USER_ID = ? OR VISIBILITY > 0 ORDER BY DOCUMENT_ID", (user_id,))
     user_documents = list()
     for result in cursor.fetchall():
-        user_documents.append({"id": result[0], "user_id": result[1], "document_id": result[2], "visibility": result[3],
+        user_documents.append({"id": result[2], "user_id": result[1], "document_id": result[2], "visibility": result[3],
                                "created_at": result[4].strftime('%Y-%m-%d %H:%M:%S'),
                                "updated_at": result[5].strftime('%Y-%m-%d %H:%M:%S')})
     cursor.close()
@@ -152,6 +152,7 @@ def get_documents():
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
 def get_document(document_id):
+    print request.args
     if connection is None:
         try_reconnecting()
     if request.method == 'GET':
@@ -318,6 +319,7 @@ def save_annotations(user_doc_id, annotations):
             return False
     print type_id_dict
     print "inserting new annotations..."
+    print filtered_annotations
     annotation_tuples = map(lambda annotation: (annotation.get('originalId',
                                                 annotation['id']),
                                                 user_doc_id,
@@ -372,11 +374,13 @@ def load_document(document_id, user_id):
     print "Loading information for document_id: " + str(document_id) + " and user: " + str(current_user.get_id())
     default_types = load_types()
     result['text'] = get_text(cursor, document_id)
-    result['denotations'] = get_denotations(cursor, document_id, user_id)
+    denotations, users = get_denotations_and_users(cursor, document_id, user_id)
+    result['denotations'] = denotations
     result['relations'] = get_relations(cursor, document_id, user_id)
     result['sourceid'] = document_id
     result['config'] = {'entity types':   default_types,
-                        'relation types': default_types}
+                        'relation types': default_types,
+                        'users': users}
     cursor.close()
     return result
 
@@ -390,10 +394,11 @@ def get_text(cursor, document_id):
     return text
 
 
-def get_denotations(cursor, document_id, user_id):
-    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, T."GROUP", E."LABEL" FROM LEARNING_TO_NOTE.ENTITIES E \
+def get_denotations_and_users(cursor, document_id, user_id):
+    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, T."GROUP", E."LABEL", U."NAME" FROM LEARNING_TO_NOTE.ENTITIES E \
                     JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
                     JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID\
+                    JOIN LEARNING_TO_NOTE.USERS U ON UD.USER_ID = U.ID\
                     LEFT OUTER JOIN LEARNING_TO_NOTE.TYPES T ON E.TYPE_ID = T.ID \
                     WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ?\
                     ORDER BY E.ID', (document_id, user_id))
@@ -401,7 +406,11 @@ def get_denotations(cursor, document_id, user_id):
     increment = 1
     previous_id = None
     #todo: handle being not logged in
+    colors = ['blue', 'navy', 'brown', 'chocolate', 'orange', 'maroon', 'turquoise']
     user_id_mapping = {current_user.get_id(): 0, PREDICTION_USER: -1}
+    prediction_engine_info = {'name': 'Prediction Engine', 'color': 'gray'}
+    current_user_info = {'name': 'You', 'color': 'darkgreen'}
+    user_info = {-1: prediction_engine_info, 0: current_user_info}
     for result in cursor.fetchall():
         denotation = {}
         current_id = str(result[0])
@@ -412,7 +421,10 @@ def get_denotations(cursor, document_id, user_id):
         else:
             increment = 1
         if not creator in user_id_mapping:
-            user_id_mapping[creator] = len(user_id_mapping)
+            new_id = len(user_id_mapping) - 1
+            user_info[new_id] = {'name': str(result[9]), 'color': colors[(new_id - 1) % len(colors)]}
+            user_id_mapping[creator] = new_id
+
         anno_info = {"code": str(result[4]),
                      "name": str(result[5]),
                      "groupId": str(result[6]),
@@ -428,7 +440,7 @@ def get_denotations(cursor, document_id, user_id):
         denotation['userId'] = user_id_mapping.get(creator)
         denotations.append(denotation)
         previous_id = str(result[0])
-    return denotations
+    return denotations, user_info
 
 
 def get_relations(cursor, document_id, user_id):
