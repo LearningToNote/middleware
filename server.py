@@ -192,11 +192,43 @@ def predict():
     document_data = load_document(data['document_id'], data['user_id'])
     user_doc_id = load_user_doc_id(data['document_id'], PREDICTION_USER)
     successful = save_document(document_data, user_doc_id, data['document_id'], PREDICTION_USER)
+
+    predict_relations(user_doc_id)
+
     if successful:
         return "OK"
     else:
         return "Something went wrong.", 500
 
+
+def predict_relations(user_document_id):
+    cursor = connection.cursor()
+
+    sql_to_prepare = 'CALL LTN_TRAIN.PREDICT_UD (?, ?)'
+    params = {'UD_ID':user_document_id}
+    psid = cursor.prepare(sql_to_prepare)
+    ps = cursor.get_prepared_statement(psid)
+    cursor.execute_prepared(ps, [params])
+    pairs = cursor.fetchall()
+
+    strore_predicted_relations(pairs, user_document_id)
+
+
+def strore_predicted_relations(pairs, user_document_id):
+    cursor = connection.cursor()
+    cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID = ?", (user_document_id,))
+
+    tuples = []
+    pairs = filter(lambda x: x[0] != 'NONE', pairs)
+    for ddi, e1_id, e2_id in pairs:
+        tuples.append((e1_id, e2_id, user_document_id, 1, load_type_id(ddi), ddi))
+
+    import pdb;pdb.set_trace()
+
+    cursor.executemany(
+        "INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)", tuples
+    )
+    connection.commit()
 
 def load_types():
     cursor = connection.cursor()
