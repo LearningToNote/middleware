@@ -82,6 +82,7 @@ def login():
                 return respond_with(user.__dict__)
         except Exception, e:
             reset_connection()
+            return str(e), 500
     return "Not authorized", 401
 
 
