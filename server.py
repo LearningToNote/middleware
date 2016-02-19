@@ -82,6 +82,7 @@ def login():
                 return respond_with(user.__dict__)
         except Exception, e:
             reset_connection()
+            return str(e), 500
     return "Not authorized", 401
 
 
@@ -374,9 +375,9 @@ def load_document(document_id, user_id):
     print "Loading information for document_id: " + str(document_id) + " and user: " + str(current_user.get_id())
     default_types = load_types()
     result['text'] = get_text(cursor, document_id)
-    denotations, users = get_denotations_and_users(cursor, document_id, user_id)
+    denotations, users, annotation_id_map = get_denotations_and_users(cursor, document_id, user_id)
     result['denotations'] = denotations
-    result['relations'] = get_relations(cursor, document_id, user_id)
+    result['relations'] = get_relations(cursor, document_id, user_id, annotation_id_map)
     result['sourceid'] = document_id
     result['config'] = {'entity types':   default_types,
                         'relation types': default_types,
@@ -411,6 +412,7 @@ def get_denotations_and_users(cursor, document_id, user_id):
     prediction_engine_info = {'name': 'Prediction Engine', 'color': 'gray'}
     current_user_info = {'name': 'You', 'color': 'darkgreen'}
     user_info = {-1: prediction_engine_info, 0: current_user_info}
+    annotation_id_map = {}
     for result in cursor.fetchall():
         denotation = {}
         current_id = str(result[0])
@@ -418,6 +420,9 @@ def get_denotations_and_users(cursor, document_id, user_id):
         if current_id == previous_id:
             current_id += "_" + str(increment)
             increment += 1
+            if not previous_id in annotation_id_map:
+                annotation_id_map[previous_id] = {}
+            annotation_id_map[previous_id][creator] = current_id
         else:
             increment = 1
         if not creator in user_id_mapping:
@@ -440,11 +445,11 @@ def get_denotations_and_users(cursor, document_id, user_id):
         denotation['userId'] = user_id_mapping.get(creator)
         denotations.append(denotation)
         previous_id = str(result[0])
-    return denotations, user_info
+    return denotations, user_info, annotation_id_map
 
 
-def get_relations(cursor, document_id, user_id):
-    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", T.GROUP_ID, T."GROUP" FROM LEARNING_TO_NOTE.PAIRS P \
+def get_relations(cursor, document_id, user_id, annotation_id_map):
+    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", T.GROUP_ID, T."GROUP", UD1.USER_ID FROM LEARNING_TO_NOTE.PAIRS P \
         LEFT OUTER JOIN LEARNING_TO_NOTE.TYPES T ON P.TYPE_ID = T.ID \
         JOIN LEARNING_TO_NOTE.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1 AND P.USER_DOC_ID = E1.USER_DOC_ID\
         JOIN LEARNING_TO_NOTE.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1 AND P.USER_DOC_ID = E2.USER_DOC_ID\
@@ -459,9 +464,20 @@ def get_relations(cursor, document_id, user_id):
                      "group":   str(result[7]),
                      "label":   str(result[3])}
         relation = {}
+        subj = str(result[1])
+        obj = str(result[2])
+        replacement_subj = annotation_id_map.get(subj)
+        replacement_obj = annotation_id_map.get(obj)
+        current_user_id = str(result[8])
+        if replacement_subj is not None:
+            if replacement_subj.get(current_user_id) is not None:
+                subj = replacement_subj.get(current_user_id)
+        if replacement_obj is not None:
+            if replacement_obj.get(current_user_id) is not None:
+                obj = replacement_obj.get(current_user_id)
         relation['id'] = str(result[0])
-        relation['subj'] = str(result[1])
-        relation['obj'] = str(result[2])
+        relation['subj'] = subj
+        relation['obj'] = obj
         relation['pred'] = type_info
         relations.append(relation)
     return relations
