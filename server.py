@@ -220,14 +220,14 @@ def strore_predicted_relations(pairs, user_document_id):
     cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID = ?", (user_document_id,))
 
     tuples = []
-    pairs = filter(lambda x: x[0] != 'NONE', pairs)
+    # import pdb;pdb.set_trace()
+    pairs = filter(lambda x: x[0] != -1, pairs)
     for ddi, e1_id, e2_id in pairs:
-        tuples.append((e1_id, e2_id, user_document_id, 1, load_type_id(ddi), ddi))
+        tuples.append((e1_id, e2_id, user_document_id, 1, ddi))
 
-    import pdb;pdb.set_trace()
 
     cursor.executemany(
-        "INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)", tuples
+        "INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID) VALUES (?, ?, ?, ?, ?)", tuples
     )
     connection.commit()
 
