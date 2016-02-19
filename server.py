@@ -119,11 +119,12 @@ def get_user_documents(user_id):
     if user_id != current_user.get_id():
         return "Not authorized to view the documents of this user.", 401
     cursor = connection.cursor()
-    cursor.execute("SELECT * FROM LEARNING_TO_NOTE.USER_DOCUMENTS "
+    cursor.execute("SELECT ID, USER_ID, DOCUMENT_ID, VISIBILITY, CREATED_AT, UPDATED_AT "
+                   "FROM LEARNING_TO_NOTE.USER_DOCUMENTS "
                    "WHERE USER_ID = ? OR VISIBILITY > 0 ORDER BY DOCUMENT_ID", (user_id,))
     user_documents = list()
     for result in cursor.fetchall():
-        user_documents.append({"id": result[2], "user_id": result[1], "document_id": result[2], "visibility": result[3],
+        user_documents.append({"id": result[0], "user_id": result[1], "document_id": result[2], "visibility": result[3],
                                "created_at": result[4].strftime('%Y-%m-%d %H:%M:%S'),
                                "updated_at": result[5].strftime('%Y-%m-%d %H:%M:%S')})
     cursor.close()
