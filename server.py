@@ -114,6 +114,34 @@ def get_user(user_id):
     return respond_with(user.__dict__)
 
 
+@app.route('/tasks')
+def get_tasks():
+    cursor = connection.cursor()
+    cursor.execute('SELECT t.id, t.name, t.domain, t.author, u.name '
+                   'FROM TASKS t LEFT OUTER JOIN USERS u ON u.id = t.author')
+    tasks = list()
+    for result in cursor.fetchall():
+        tasks.append({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2],
+                      'user_id': result[3], 'user_name': result[4]})
+    return respond_with(tasks)
+
+
+@app.route('/tasks/<task_id>', methods=['GET', 'POST', 'DELETE'])
+def manage_task(task_id):
+    cursor = connection.cursor()
+    if request.method == 'GET':
+        cursor.execute('SELECT t.id, t.name, t.domain, t.author, u.name '
+                       'FROM TASKS t LEFT OUTER JOIN USERS u ON u.id = t.author'
+                       'WHERE t.id = ?', (task_id, ))
+        result = cursor.fetchone()
+        return respond_with({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2],
+                             'user_id': result[3], 'user_name': result[4]})
+    elif request.method == 'POST':
+        pass  # todo: let users create or update tasks
+    elif request.method == 'DELETE':
+        pass  # todo: let users delete tasks
+
+
 @app.route('/user_documents/<user_id>')
 def get_user_documents(user_id):
     if user_id != current_user.get_id():
@@ -154,7 +182,6 @@ def get_documents():
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
 def get_document(document_id):
-    print request.args
     if connection is None:
         try_reconnecting()
     if request.method == 'GET':
@@ -233,6 +260,7 @@ def strore_predicted_relations(pairs, user_document_id):
     )
     connection.commit()
 
+
 def load_types():
     cursor = connection.cursor()
     cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP" FROM LTN_DEVELOP.TYPES ORDER BY "GROUP" DESC')
@@ -277,6 +305,7 @@ def save_document(data, user_doc_id, document_id, user_id):
     else:
         print "did not save annotations successfully"
     return successful
+
 
 def create_user_doc_if_not_existent(user_doc_id, document_id, user_id):
     cursor = connection.cursor()
