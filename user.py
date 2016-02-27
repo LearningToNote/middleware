@@ -3,7 +3,7 @@ class User:
     @classmethod
     def get(cls, user_id, cursor):
         cursor.execute("SELECT id, name, token, description, image "
-                       "FROM LEARNING_TO_NOTE.Users WHERE id = ?", (user_id,))
+                       "FROM LTN_DEVELOP.Users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
         if row:
             image = row[4]
@@ -15,7 +15,7 @@ class User:
 
     @classmethod
     def all(cls, cursor):
-        cursor.execute("SELECT id, name FROM LEARNING_TO_NOTE.Users")
+        cursor.execute("SELECT id, name FROM LTN_DEVELOP.Users")
         users = list()
         for row in cursor.fetchall():
             users.append(User(str(row[0]), str(row[1]), None, None, None))

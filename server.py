@@ -120,7 +120,7 @@ def get_user_documents(user_id):
         return "Not authorized to view the documents of this user.", 401
     cursor = connection.cursor()
     cursor.execute("SELECT ID, USER_ID, DOCUMENT_ID, VISIBILITY, CREATED_AT, UPDATED_AT "
-                   "FROM LEARNING_TO_NOTE.USER_DOCUMENTS "
+                   "FROM LTN_DEVELOP.USER_DOCUMENTS "
                    "WHERE USER_ID = ? OR VISIBILITY > 0 ORDER BY DOCUMENT_ID", (user_id,))
     user_documents = list()
     for result in cursor.fetchall():
@@ -144,7 +144,7 @@ def manage_user_documents(user_document_id):
 @app.route('/documents')
 def get_documents():
     cursor = connection.cursor()
-    cursor.execute("SELECT id FROM LEARNING_TO_NOTE.DOCUMENTS ORDER BY id")
+    cursor.execute("SELECT id FROM LTN_DEVELOP.DOCUMENTS ORDER BY id")
     documents = list()
     for result in cursor.fetchall():
         documents.append(result[0])
@@ -219,7 +219,7 @@ def predict_relations(user_document_id):
 
 def strore_predicted_relations(pairs, user_document_id):
     cursor = connection.cursor()
-    cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID = ?", (user_document_id,))
+    cursor.execute("DELETE FROM LTN_DEVELOP.PAIRS WHERE USER_DOC_ID = ?", (user_document_id,))
 
     tuples = []
     # import pdb;pdb.set_trace()
@@ -229,13 +229,13 @@ def strore_predicted_relations(pairs, user_document_id):
 
 
     cursor.executemany(
-        "INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID) VALUES (?, ?, ?, ?, ?)", tuples
+        "INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID) VALUES (?, ?, ?, ?, ?)", tuples
     )
     connection.commit()
 
 def load_types():
     cursor = connection.cursor()
-    cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP" FROM LEARNING_TO_NOTE.TYPES ORDER BY "GROUP" DESC')
+    cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP" FROM LTN_DEVELOP.TYPES ORDER BY "GROUP" DESC')
     types = list()
 
     for aType in cursor.fetchall():
@@ -248,7 +248,7 @@ def load_types():
 
 def load_type_id(code):
     cursor = connection.cursor()
-    cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.TYPES WHERE CODE = ?", (code,))
+    cursor.execute("SELECT ID FROM LTN_DEVELOP.TYPES WHERE CODE = ?", (code,))
     result = cursor.fetchone()
     if result:
         return result[0]
@@ -280,11 +280,11 @@ def save_document(data, user_doc_id, document_id, user_id):
 
 def create_user_doc_if_not_existent(user_doc_id, document_id, user_id):
     cursor = connection.cursor()
-    cursor.execute("SELECT 1 FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE ID = ?", (user_doc_id,))
+    cursor.execute("SELECT 1 FROM LTN_DEVELOP.USER_DOCUMENTS WHERE ID = ?", (user_doc_id,))
     result = cursor.fetchone()
     if not result:
         date = datetime.now()
-        cursor.execute("INSERT INTO LEARNING_TO_NOTE.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
+        cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
             (user_doc_id, user_id, document_id, 1, date, date))
         connection.commit()
 
@@ -293,13 +293,13 @@ def delete_annotation_data(user_doc_id):
     cursor = connection.cursor()
     print "Deleting old information for " + str(user_doc_id) + "..."
     print "Deleting existing pairs..."
-    cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID = ?", (user_doc_id,))
+    cursor.execute("DELETE FROM LTN_DEVELOP.PAIRS WHERE USER_DOC_ID = ?", (user_doc_id,))
     connection.commit()
     print "Deleting existing offsets..."
-    cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID = ?", (user_doc_id,))
+    cursor.execute("DELETE FROM LTN_DEVELOP.OFFSETS WHERE USER_DOC_ID = ?", (user_doc_id,))
     connection.commit()
     print "Deleting existing annotations..."
-    cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID = ?", (user_doc_id,))
+    cursor.execute("DELETE FROM LTN_DEVELOP.ENTITIES WHERE USER_DOC_ID = ?", (user_doc_id,))
     connection.commit()
 
 
@@ -328,10 +328,10 @@ def save_annotations(user_doc_id, annotations):
                                                 type_id_dict.get(annotation['obj']['code'], None),
                                                 annotation['obj'].get('label', None)),
                             filtered_annotations)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) VALUES (?, ?, ?, ?)", annotation_tuples)
+    cursor.executemany("INSERT INTO LTN_DEVELOP.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) VALUES (?, ?, ?, ?)", annotation_tuples)
     print "inserting new offsets..."
     offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], annotation.get('originalId', annotation['id']), user_doc_id), filtered_annotations)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.OFFSETS VALUES (?, ?, ?, ?)", offset_tuples)
+    cursor.executemany("INSERT INTO LTN_DEVELOP.OFFSETS VALUES (?, ?, ?, ?)", offset_tuples)
     connection.commit()
     return True
 
@@ -355,7 +355,7 @@ def save_relations(user_doc_id, relations, id_map):
                                             type_id_dict.get(relation['pred']['code'], None),
                                             relation['pred'].get('label', None)),
                         relations)
-    cursor.executemany("INSERT INTO LEARNING_TO_NOTE.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)",
+    cursor.executemany("INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)",
                         relation_tuples)
     connection.commit()
     return True
@@ -363,7 +363,7 @@ def save_relations(user_doc_id, relations, id_map):
 
 def load_user_doc_id(document_id, user_id):
     cursor = connection.cursor()
-    cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?", (document_id, user_id))
+    cursor.execute("SELECT ID FROM LTN_DEVELOP.USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?", (document_id, user_id))
     result = cursor.fetchone()
     if result:
         return str(result[0])
@@ -388,26 +388,38 @@ def load_document(document_id, user_id):
 
 
 def get_text(cursor, document_id):
-    cursor.execute("SELECT TEXT FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
-    result = cursor.fetchone()
     text = None
-    if result:
-        text = str(result[0].read())
+    try:
+        sql_to_prepare = 'CALL LTN_DEVELOP.get_document_content (?, ?)'
+        params = {
+            'DOCUMENT_ID': document_id,
+            'TEXT': ''
+        }
+        psid = cursor.prepare(sql_to_prepare)
+        ps = cursor.get_prepared_statement(psid)
+        cursor.execute_prepared(ps, [params])
+        result = cursor.fetchone()
+        if result:
+            text = str(result[0].read())
+    except Exception, e:
+        print 'Error: ', e
     return text
 
 
 def get_denotations_and_users(cursor, document_id, user_id):
-    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, T."GROUP", E."LABEL", U."NAME" FROM LEARNING_TO_NOTE.ENTITIES E \
-                    JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
-                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID\
-                    JOIN LEARNING_TO_NOTE.USERS U ON UD.USER_ID = U.ID\
-                    LEFT OUTER JOIN LEARNING_TO_NOTE.TYPES T ON E.TYPE_ID = T.ID \
-                    WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ?\
-                    ORDER BY E.ID', (document_id, user_id))
+    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, '
+                   'T."GROUP", E."LABEL", U."NAME" '
+                   'FROM LTN_DEVELOP.ENTITIES E '
+                   'JOIN LTN_DEVELOP.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ? '
+                   'JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID '
+                   'JOIN LTN_DEVELOP.USERS U ON UD.USER_ID = U.ID '
+                   'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON E.TYPE_ID = T.ID '
+                   'WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ? '
+                   'ORDER BY E.ID', (document_id, user_id))
     denotations = []
     increment = 1
     previous_id = None
-    #todo: handle being not logged in
+    # todo: handle being not logged in
     colors = ['blue', 'navy', 'brown', 'chocolate', 'orange', 'maroon', 'turquoise']
     user_id_mapping = {current_user.get_id(): 0, PREDICTION_USER: -1}
     prediction_engine_info = {'name': 'Prediction Engine', 'color': 'gray'}
@@ -441,7 +453,7 @@ def get_denotations_and_users(cursor, document_id, user_id):
         denotation['span'] = {}
         denotation['span']['begin'] = result[2]
         denotation['span']['end'] = result[3]
-        #neccessary for split annotations
+        # neccessary for split annotations
         denotation['originalId'] = str(result[0])
         denotation['userId'] = user_id_mapping.get(creator)
         denotations.append(denotation)
@@ -450,13 +462,15 @@ def get_denotations_and_users(cursor, document_id, user_id):
 
 
 def get_relations(cursor, document_id, user_id, annotation_id_map):
-    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", T.GROUP_ID, T."GROUP", UD1.USER_ID FROM LEARNING_TO_NOTE.PAIRS P \
-        LEFT OUTER JOIN LEARNING_TO_NOTE.TYPES T ON P.TYPE_ID = T.ID \
-        JOIN LEARNING_TO_NOTE.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1 AND P.USER_DOC_ID = E1.USER_DOC_ID\
-        JOIN LEARNING_TO_NOTE.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1 AND P.USER_DOC_ID = E2.USER_DOC_ID\
-        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD1 ON E1.USER_DOC_ID = UD1.ID AND UD1.DOCUMENT_ID = ? AND (UD1.USER_ID = ? OR UD1.VISIBILITY = 1) \
-        JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD2 ON E2.USER_DOC_ID = UD2.ID AND UD2.DOCUMENT_ID = ? AND (UD2.USER_ID = ? OR UD2.VISIBILITY = 1)',
-        (document_id, user_id, document_id, user_id))
+    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", T.GROUP_ID, T."GROUP", UD1.USER_ID '
+                   'FROM LTN_DEVELOP.PAIRS P '
+                   'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON P.TYPE_ID = T.ID '
+                   'JOIN LTN_DEVELOP.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1 AND P.USER_DOC_ID = E1.USER_DOC_ID '
+                   'JOIN LTN_DEVELOP.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1 AND P.USER_DOC_ID = E2.USER_DOC_ID '
+                   'JOIN LTN_DEVELOP.USER_DOCUMENTS UD1 ON E1.USER_DOC_ID = UD1.ID AND UD1.DOCUMENT_ID = ? '
+                   'AND (UD1.USER_ID = ? OR UD1.VISIBILITY = 1) '
+                   'JOIN LTN_DEVELOP.USER_DOCUMENTS UD2 ON E2.USER_DOC_ID = UD2.ID AND UD2.DOCUMENT_ID = ? '
+                   'AND (UD2.USER_ID = ? OR UD2.VISIBILITY = 1)', (document_id, user_id, document_id, user_id))
     relations = []
     for result in cursor.fetchall():
         type_info = {"code":    str(result[4]),
@@ -492,10 +506,10 @@ def delete_user_documents(user_document_ids):
     user_document_ids = "('" + "', '".join(user_document_ids) + "')"
     try:
         cursor = connection.cursor()
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.PAIRS WHERE USER_DOC_ID IN " + user_document_ids)
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.OFFSETS WHERE USER_DOC_ID IN  " + user_document_ids)
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.ENTITIES WHERE USER_DOC_ID IN " + user_document_ids)
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE ID IN " + user_document_ids)
+        cursor.execute("DELETE FROM LTN_DEVELOP.PAIRS WHERE USER_DOC_ID IN " + user_document_ids)
+        cursor.execute("DELETE FROM LTN_DEVELOP.OFFSETS WHERE USER_DOC_ID IN  " + user_document_ids)
+        cursor.execute("DELETE FROM LTN_DEVELOP.ENTITIES WHERE USER_DOC_ID IN " + user_document_ids)
+        cursor.execute("DELETE FROM LTN_DEVELOP.USER_DOCUMENTS WHERE ID IN " + user_document_ids)
         connection.commit()
         return True
     except Exception, e:
@@ -505,11 +519,17 @@ def delete_user_documents(user_document_ids):
 def delete_document(document_id):
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT ID FROM LEARNING_TO_NOTE.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
+        cursor.execute("SELECT ID FROM LTN_DEVELOP.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
         user_document_ids = map(lambda t: t[0], cursor.fetchall())
         delete_user_documents(user_document_ids)
-        cursor.execute("DELETE FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
+
+        sql_to_prepare = 'CALL LTN_DEVELOP.delete_document (?)'
+        params = {'DOCUMENT_ID': document_id}
+        psid = cursor.prepare(sql_to_prepare)
+        ps = cursor.get_prepared_statement(psid)
+        cursor.execute_prepared(ps, [params])
         connection.commit()
+
         return True
     except Exception, e:
         raise e
@@ -573,9 +593,9 @@ def return_entities():
 
 
 def get_entities_for_user_document(cursor, document_id, user_id):
-    cursor.execute('SELECT E.ID, E."TYPE_ID", O."START", O."END", E.USER_DOC_ID FROM LEARNING_TO_NOTE.ENTITIES E \
-                    JOIN LEARNING_TO_NOTE.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
-                    JOIN LEARNING_TO_NOTE.OFFSETS O ON O.ENTITY_ID = E.ID \
+    cursor.execute('SELECT E.ID, E."TYPE_ID", O."START", O."END", E.USER_DOC_ID FROM LTN_DEVELOP.ENTITIES E \
+                    JOIN LTN_DEVELOP.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ?\
+                    JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID \
                     WHERE UD.USER_ID = ? ORDER BY E.ID', (document_id, user_id))
     annotations = list()
     for result in cursor.fetchall():
@@ -598,20 +618,28 @@ def import_document():
     req = request.get_json()
     document_id = req['document_id']
     document_text = req['text']
+    task = req['task']
     document_visibility = 1
     if 'visibility' in req:
         document_visibility = int(req['visibility'])
     cursor = connection.cursor()
-
-    cursor.execute("SELECT COUNT(*) FROM LEARNING_TO_NOTE.DOCUMENTS WHERE ID = ?", (document_id,))
+    cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.DOCUMENTS WHERE ID = ?", (document_id,))
     result = cursor.fetchone()
     if result[0] != 0:
         return "A document with the ID '%s' already exists" % (document_id,), 409
 
-    cursor.execute("INSERT INTO LEARNING_TO_NOTE.DOCUMENTS VALUES (?, ?)", (document_id, document_text))
+    sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?)'
+    params = {
+        'DOCUMENT_ID': document_id,
+        'DOCUMENT_TEXT': document_text,
+        'TASK': task
+    }
+    psid = cursor.prepare(sql_to_prepare)
+    ps = cursor.get_prepared_statement(psid)
+    cursor.execute_prepared(ps, [params])
     connection.commit()
 
-    cursor.execute("INSERT INTO LEARNING_TO_NOTE.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
+    cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
                    (current_user.get_id() + '_' + document_id, current_user.get_id(), document_id,
                     document_visibility, datetime.now(), datetime.now()))
     connection.commit()
