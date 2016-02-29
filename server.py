@@ -134,8 +134,18 @@ def manage_task(task_id):
                        'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author '
                        'WHERE t.id = ?', (task_id, ))
         result = cursor.fetchone()
+        cursor.execute('SELECT d.id, count(ud.id) '
+                       'FROM LTN_DEVELOP.TASKS t '
+                       'JOIN LTN_DEVELOP.DOCUMENTS d ON d.task = t.id '
+                       'LEFT OUTER JOIN LTN_DEVELOP.USER_DOCUMENTS ud ON ud.document_id = d.id '
+                       'AND (ud.visibility = 1 OR ud.user_id = ?) '
+                       'WHERE t.id = ? '
+                       'GROUP BY d.id ORDER BY d.id ASC', (current_user.get_id(), task_id))
+        documents = list()
+        for row in cursor.fetchall():
+            documents.append({'document_id': row[0], 'user_document_count': row[1]})
         return respond_with({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2],
-                             'user_id': result[3], 'user_name': result[4]})
+                             'user_id': result[3], 'user_name': result[4], 'documents': documents})
     elif request.method == 'POST':
         req = request.get_json()
         sql_to_prepare = 'CALL LTN_DEVELOP.update_task (?, ?, ?, ?, ?)'
@@ -160,6 +170,23 @@ def manage_task(task_id):
         cursor.execute_prepared(ps, [params])
         connection.commit()
         return 'OK', 200
+
+
+@app.route('/user_documents_for/<document_id>')
+def get_document_details(document_id):
+    user_documents = list()
+    cursor = connection.cursor()
+    cursor.execute('SELECT d.id, MIN(d.user_id), MIN(u.name), COUNT(DISTINCT e.id), COUNT(distinct p.id) '
+                   'FROM LTN_DEVELOP.USER_DOCUMENTS d '
+                   'JOIN LTN_DEVELOP.USERS u ON u.id = d.user_id '
+                   'LEFT OUTER JOIN LTN_DEVELOP.ENTITIES e ON e.user_doc_id = d.id '
+                   'LEFT OUTER JOIN LTN_DEVELOP.PAIRS p ON p.user_doc_id = d.id '
+                   'WHERE d.document_id = ?'
+                   'GROUP BY d.id', (document_id,))
+    for row in cursor.fetchall():
+        user_documents.append({'id': row[0], 'user_id': row[1], 'user_name': row[2],
+                               'entities': row[3], 'pairs': row[4]})
+    return respond_with(user_documents)
 
 
 @app.route('/user_documents/<user_id>')
@@ -187,17 +214,6 @@ def manage_user_documents(user_document_id):
             return 'Deletion unsuccessful.', 500
         else:
             return 'Deleted.', 200
-
-
-@app.route('/documents')
-def get_documents():
-    cursor = connection.cursor()
-    cursor.execute("SELECT id FROM LTN_DEVELOP.DOCUMENTS ORDER BY id")
-    documents = list()
-    for result in cursor.fetchall():
-        documents.append(result[0])
-    cursor.close()
-    return respond_with(documents)
 
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
