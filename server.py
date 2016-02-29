@@ -118,7 +118,7 @@ def get_user(user_id):
 def get_tasks():
     cursor = connection.cursor()
     cursor.execute('SELECT t.id, t.name, t.domain, t.author, u.name '
-                   'FROM TASKS t LEFT OUTER JOIN USERS u ON u.id = t.author')
+                   'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author')
     tasks = list()
     for result in cursor.fetchall():
         tasks.append({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2],
@@ -131,15 +131,35 @@ def manage_task(task_id):
     cursor = connection.cursor()
     if request.method == 'GET':
         cursor.execute('SELECT t.id, t.name, t.domain, t.author, u.name '
-                       'FROM TASKS t LEFT OUTER JOIN USERS u ON u.id = t.author'
+                       'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author '
                        'WHERE t.id = ?', (task_id, ))
         result = cursor.fetchone()
         return respond_with({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2],
                              'user_id': result[3], 'user_name': result[4]})
     elif request.method == 'POST':
-        pass  # todo: let users create or update tasks
+        req = request.get_json()
+        sql_to_prepare = 'CALL LTN_DEVELOP.update_task (?, ?, ?, ?, ?)'
+        params = {
+            'TASK_ID': req.get('task_id'),
+            'TASK_NAME': req.get('task_name'),
+            'TABLE_NAME': req.get('table_name'),
+            'ER_ANALYSIS_CONFIG': req.get('config'),
+            'AUTHOR': req.get('author')
+        }
+        psid = cursor.prepare(sql_to_prepare)
+        ps = cursor.get_prepared_statement(psid)
+        cursor.execute_prepared(ps, [params])
+        connection.commit()
+        return 'OK', 200
     elif request.method == 'DELETE':
-        pass  # todo: let users delete tasks
+        req = request.get_json()
+        sql_to_prepare = 'CALL LTN_DEVELOP.delete_task (?)'
+        params = {'TASK_ID': req.get('task_id')}
+        psid = cursor.prepare(sql_to_prepare)
+        ps = cursor.get_prepared_statement(psid)
+        cursor.execute_prepared(ps, [params])
+        connection.commit()
+        return 'OK', 200
 
 
 @app.route('/user_documents/<user_id>')
