@@ -693,7 +693,7 @@ def import_document():
     if result[0] != 0:
         return "A document with the ID '%s' already exists" % (document_id,), 409
 
-    sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?)'
+    sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?, ?)'
     params = {
         'DOCUMENT_ID': document_id,
         'DOCUMENT_TEXT': document_text,
