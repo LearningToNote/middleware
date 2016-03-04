@@ -1,5 +1,5 @@
 flask
 flask-cors
 flask-login
-pyhdb
+git+https://github.com/Parnswir/PyHDB@1151cb6485654fff1f8521d035c9a3836cd38626
 metapub
