@@ -277,10 +277,10 @@ def predict_relations(user_document_id):
     cursor.execute_prepared(ps, [params])
     pairs = cursor.fetchall()
 
-    strore_predicted_relations(pairs, user_document_id)
+    store_predicted_relations(pairs, user_document_id)
 
 
-def strore_predicted_relations(pairs, user_document_id):
+def store_predicted_relations(pairs, user_document_id):
     cursor = connection.cursor()
     cursor.execute("DELETE FROM LTN_DEVELOP.PAIRS WHERE USER_DOC_ID = ?", (user_document_id,))
 
