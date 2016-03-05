@@ -30,7 +30,8 @@ login_manager = LoginManager()
 login_manager.session_protection = None
 login_manager.init_app(app)
 
-PREDICTION_USER = 'victor_predictor'
+PREDICT_ENTITIES = 'entities'
+PREDICT_RELATIONS = 'relations'
 
 
 def init():
@@ -255,11 +256,31 @@ def get_document(document_id):
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
-    document_data = load_document(data['document_id'], data['user_id'])
-    user_doc_id = load_user_doc_id(data['document_id'], PREDICTION_USER)
-    successful = save_document(document_data, user_doc_id, data['document_id'], PREDICTION_USER)
+    tasks = data.get('tasks', [PREDICT_ENTITIES])
+    document_id = data['document_id']
+    user_id = data.get('user_id', current_user.get_id())
+    current_prediction_user = prediction_user_for_user(user_id)
+    delete_user_document(load_user_doc_id(document_id, current_prediction_user))
+    successful = True
+    if PREDICT_ENTITIES in tasks:
+        pass
+    if PREDICT_RELATIONS in tasks:
+        document_data = json.loads(data.get('current_state', None))
+        if document_data is None:
+            document_data = load_document(document_id, user_id)
+        else:
+            # if using the annotations created by the user as foundation,
+            # the current status has to be saved first in order to disambiguate the ids of the annotations
+            user_doc_id = load_user_doc_id(document_id, current_user.get_id())
+            successful = save_document(document_data, user_doc_id, document_id, current_user.get_id())
+            if not successful:
+                return "Could not save the document", 500
 
-    predict_relations(user_doc_id)
+        user_doc_id = load_user_doc_id(document_id, current_prediction_user)
+        successful = save_document(document_data, user_doc_id, document_id, current_prediction_user, False)
+        predict_relations(user_doc_id)
+        document_data = load_document(document_id, current_user.get_id(), True)
+        return respond_with(document_data)
 
     if successful:
         return "OK"
@@ -319,10 +340,10 @@ def load_type_id(code):
     return None
 
 
-def save_document(data, user_doc_id, document_id, user_id):
+def save_document(data, user_doc_id, document_id, user_id, is_visible = True):
     annotations = data['denotations']
     successful = True
-    create_user_doc_if_not_existent(user_doc_id, document_id, user_id)
+    create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible)
     delete_annotation_data(user_doc_id)
     print "Did load user_doc_id: " + str(user_doc_id)
     successful &= save_annotations(user_doc_id, annotations)
@@ -343,14 +364,14 @@ def save_document(data, user_doc_id, document_id, user_id):
     return successful
 
 
-def create_user_doc_if_not_existent(user_doc_id, document_id, user_id):
+def create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible = True):
     cursor = connection.cursor()
     cursor.execute("SELECT 1 FROM LTN_DEVELOP.USER_DOCUMENTS WHERE ID = ?", (user_doc_id,))
     result = cursor.fetchone()
     if not result:
         date = datetime.now()
         cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
-            (user_doc_id, user_id, document_id, 1, date, date))
+            (user_doc_id, user_id, document_id, int(is_visible), date, date))
         connection.commit()
 
 
@@ -435,15 +456,15 @@ def load_user_doc_id(document_id, user_id):
     return str(user_id) + "_" + str(document_id)
 
 
-def load_document(document_id, user_id):
+def load_document(document_id, user_id, show_predictions = False):
     cursor = connection.cursor()
     result = {}
     print "Loading information for document_id: " + str(document_id) + " and user: " + str(current_user.get_id())
     default_types = load_types()
     result['text'] = get_text(cursor, document_id)
-    denotations, users, annotation_id_map = get_denotations_and_users(cursor, document_id, user_id)
+    denotations, users, annotation_id_map = get_denotations_and_users(cursor, document_id, user_id, show_predictions)
     result['denotations'] = denotations
-    result['relations'] = get_relations(cursor, document_id, user_id, annotation_id_map)
+    result['relations'] = get_relations(cursor, document_id, user_id, annotation_id_map, show_predictions)
     result['sourceid'] = document_id
     result['config'] = {'entity types':   default_types,
                         'relation types': default_types,
@@ -471,7 +492,8 @@ def get_text(cursor, document_id):
     return text
 
 
-def get_denotations_and_users(cursor, document_id, user_id):
+def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
+    current_prediction_user = get_current_prediction_user(user_id, show_predictions)
     cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, '
                    'T."GROUP", E."LABEL", U."NAME" '
                    'FROM LTN_DEVELOP.ENTITIES E '
@@ -479,18 +501,21 @@ def get_denotations_and_users(cursor, document_id, user_id):
                    'JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID '
                    'JOIN LTN_DEVELOP.USERS U ON UD.USER_ID = U.ID '
                    'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON E.TYPE_ID = T.ID '
-                   'WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ? '
-                   'ORDER BY E.ID', (document_id, user_id))
+                   'WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ? OR UD.USER_ID = ? '
+                   'ORDER BY E.ID', (document_id, user_id, current_prediction_user))
     denotations = []
     increment = 1
     previous_id = None
     # todo: handle being not logged in
     colors = ['blue', 'navy', 'brown', 'chocolate', 'orange', 'maroon', 'turquoise']
-    user_id_mapping = {current_user.get_id(): 0, PREDICTION_USER: -1}
+    user_id_mapping = {current_user.get_id(): 0}
     prediction_engine_info = {'name': 'Prediction Engine', 'color': 'gray'}
     current_user_info = {'name': 'You', 'color': 'darkgreen'}
-    user_info = {-1: prediction_engine_info, 0: current_user_info}
+    user_info = {0: current_user_info}
     annotation_id_map = {}
+    if current_prediction_user != user_id:
+        user_info[-1] = prediction_engine_info
+        user_id_mapping[current_prediction_user] = -1
     for result in cursor.fetchall():
         denotation = {}
         current_id = str(result[0])
@@ -503,8 +528,8 @@ def get_denotations_and_users(cursor, document_id, user_id):
             annotation_id_map[previous_id][creator] = current_id
         else:
             increment = 1
-        if not creator in user_id_mapping:
-            new_id = len(user_id_mapping) - 1
+        if not creator in user_id_mapping and creator != current_prediction_user:
+            new_id = len(user_id_mapping)
             user_info[new_id] = {'name': str(result[9]), 'color': colors[(new_id - 1) % len(colors)]}
             user_id_mapping[creator] = new_id
 
@@ -526,16 +551,19 @@ def get_denotations_and_users(cursor, document_id, user_id):
     return denotations, user_info, annotation_id_map
 
 
-def get_relations(cursor, document_id, user_id, annotation_id_map):
+def get_relations(cursor, document_id, user_id, annotation_id_map, show_predictions):
+    current_prediction_user = get_current_prediction_user(user_id, show_predictions)
     cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", T.GROUP_ID, T."GROUP", UD1.USER_ID '
                    'FROM LTN_DEVELOP.PAIRS P '
                    'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON P.TYPE_ID = T.ID '
                    'JOIN LTN_DEVELOP.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1 AND P.USER_DOC_ID = E1.USER_DOC_ID '
                    'JOIN LTN_DEVELOP.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1 AND P.USER_DOC_ID = E2.USER_DOC_ID '
                    'JOIN LTN_DEVELOP.USER_DOCUMENTS UD1 ON E1.USER_DOC_ID = UD1.ID AND UD1.DOCUMENT_ID = ? '
-                   'AND (UD1.USER_ID = ? OR UD1.VISIBILITY = 1) '
+                   'AND (UD1.USER_ID = ? OR UD1.USER_ID = ? OR UD1.VISIBILITY = 1) '
                    'JOIN LTN_DEVELOP.USER_DOCUMENTS UD2 ON E2.USER_DOC_ID = UD2.ID AND UD2.DOCUMENT_ID = ? '
-                   'AND (UD2.USER_ID = ? OR UD2.VISIBILITY = 1)', (document_id, user_id, document_id, user_id))
+                   'AND (UD2.USER_ID = ? OR UD2.USER_ID = ? OR UD2.VISIBILITY = 1)',
+                   (document_id, user_id, current_prediction_user,
+                    document_id, user_id, current_prediction_user))
     relations = []
     for result in cursor.fetchall():
         type_info = {"code":    str(result[4]),
@@ -710,6 +738,16 @@ def import_document():
     connection.commit()
     return "Document imported", 201
 
+
+def prediction_user_for_user(user_id):
+    return user_id + '__predictor'
+
+
+def get_current_prediction_user(user_id, show_predictions):
+    if show_predictions:
+        return prediction_user_for_user(user_id)
+    else:
+        return user_id
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
