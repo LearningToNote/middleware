@@ -283,10 +283,7 @@ def predict():
         document_data = load_document(document_id, current_user.get_id(), True)
         return respond_with(document_data)
 
-    if successful:
-        return "OK"
-    else:
-        return "Something went wrong.", 500
+    return "Something went wrong.", 500
 
 
 def predict_relations(user_document_id, task_id):
