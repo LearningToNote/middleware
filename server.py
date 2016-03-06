@@ -256,15 +256,16 @@ def get_document(document_id):
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
-    tasks = data.get('tasks', [PREDICT_ENTITIES])
+    task_id = data['task_id']
+    jobs = data.get('jobs', [PREDICT_ENTITIES])
     document_id = data['document_id']
     user_id = data.get('user_id', current_user.get_id())
     current_prediction_user = prediction_user_for_user(user_id)
     delete_user_document(load_user_doc_id(document_id, current_prediction_user))
-    successful = True
-    if PREDICT_ENTITIES in tasks:
+    successful = False
+    if PREDICT_ENTITIES in jobs:
         pass
-    if PREDICT_RELATIONS in tasks:
+    if PREDICT_RELATIONS in jobs:
         document_data = json.loads(data.get('current_state', None))
         if document_data is None:
             document_data = load_document(document_id, user_id)
@@ -278,7 +279,7 @@ def predict():
 
         user_doc_id = load_user_doc_id(document_id, current_prediction_user)
         successful = save_document(document_data, user_doc_id, document_id, current_prediction_user, False)
-        predict_relations(user_doc_id)
+        predict_relations(user_doc_id, task_id)
         document_data = load_document(document_id, current_user.get_id(), True)
         return respond_with(document_data)
 
@@ -288,11 +289,12 @@ def predict():
         return "Something went wrong.", 500
 
 
-def predict_relations(user_document_id):
+def predict_relations(user_document_id, task_id):
     cursor = connection.cursor()
 
-    sql_to_prepare = 'CALL LTN_TRAIN.PREDICT_UD (?, ?)'
-    params = {'UD_ID':user_document_id}
+    sql_to_prepare = 'CALL LTN_DEVELOP.PREDICT_UD (?, ?, ?)'
+    params = {'UD_ID':user_document_id,
+            'TASK_ID':str(task_id)}
     psid = cursor.prepare(sql_to_prepare)
     ps = cursor.get_prepared_statement(psid)
     cursor.execute_prepared(ps, [params])
@@ -499,7 +501,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
                    'FROM LTN_DEVELOP.ENTITIES E '
                    'JOIN LTN_DEVELOP.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ? '
                    'JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID '
-                   'JOIN LTN_DEVELOP.USERS U ON UD.USER_ID = U.ID '
+                   'LEFT OUTER JOIN LTN_DEVELOP.USERS U ON UD.USER_ID = U.ID '
                    'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON E.TYPE_ID = T.ID '
                    'WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ? OR UD.USER_ID = ? '
                    'ORDER BY E.ID', (document_id, user_id, current_prediction_user))
