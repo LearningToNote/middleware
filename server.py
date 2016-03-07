@@ -239,7 +239,7 @@ def get_document(document_id):
         if successful:
             return ""
         else:
-            return "An error occured while saving the document.", 500
+            return "An error occurred while saving the document.", 500
     if request.method == 'DELETE':
         successful = False
         try:
@@ -262,7 +262,6 @@ def predict():
     user_id = data.get('user_id', current_user.get_id())
     current_prediction_user = prediction_user_for_user(user_id)
     delete_user_document(load_user_doc_id(document_id, current_prediction_user))
-    successful = False
     if PREDICT_ENTITIES in jobs:
         pass
     if PREDICT_RELATIONS in jobs:
@@ -278,7 +277,7 @@ def predict():
                 return "Could not save the document", 500
 
         user_doc_id = load_user_doc_id(document_id, current_prediction_user)
-        successful = save_document(document_data, user_doc_id, document_id, current_prediction_user, False)
+        save_document(document_data, user_doc_id, document_id, current_prediction_user, False)
         predict_relations(user_doc_id, task_id)
         document_data = load_document(document_id, current_user.get_id(), True)
         return respond_with(document_data)
@@ -290,8 +289,8 @@ def predict_relations(user_document_id, task_id):
     cursor = connection.cursor()
 
     sql_to_prepare = 'CALL LTN_DEVELOP.PREDICT_UD (?, ?, ?)'
-    params = {'UD_ID':user_document_id,
-            'TASK_ID':str(task_id)}
+    params = {'UD_ID': user_document_id,
+              'TASK_ID': str(task_id)}
     psid = cursor.prepare(sql_to_prepare)
     ps = cursor.get_prepared_statement(psid)
     cursor.execute_prepared(ps, [params])
@@ -309,7 +308,6 @@ def store_predicted_relations(pairs, user_document_id):
     pairs = filter(lambda x: x[0] != -1, pairs)
     for ddi, e1_id, e2_id in pairs:
         tuples.append((e1_id, e2_id, user_document_id, 1, ddi))
-
 
     cursor.executemany(
         "INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID) VALUES (?, ?, ?, ?, ?)", tuples
@@ -349,7 +347,7 @@ def save_document(data, user_doc_id, document_id, user_id, is_visible = True):
     if successful:
         print "saved annotations successfully"
         id_map = {}
-        #neccessary, as TextAE does not create "originalId"s
+        # neccessary, as TextAE does not create "originalId"s
         for annotation in annotations:
             id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
         print "saving relations"
@@ -389,7 +387,7 @@ def delete_annotation_data(user_doc_id):
 
 
 def save_annotations(user_doc_id, annotations):
-    #only save annotations from the current user, defined as userId 0 at loading time
+    # only save annotations from the current user, defined as userId 0 at loading time
     filtered_annotations = filter(lambda annotation: annotation.get('userId', 0) == 0, annotations)
     cursor = connection.cursor()
     if not user_doc_id:
