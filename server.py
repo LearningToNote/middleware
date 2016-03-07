@@ -261,8 +261,18 @@ def predict():
     document_id = data['document_id']
     user_id = data.get('user_id', current_user.get_id())
     current_prediction_user = prediction_user_for_user(user_id)
-    delete_user_document(load_user_doc_id(document_id, current_prediction_user))
     prediction_user_doc_id = load_user_doc_id(document_id, current_prediction_user)
+    delete_user_document(prediction_user_doc_id)
+
+    document_data = json.loads(data.get('current_state', None))
+    if document_data is None:
+        document_data = load_document(document_id, user_id)
+    else:
+        # the current status has to be saved first in order to disambiguate the ids of the annotations
+        user_doc_id = load_user_doc_id(document_id, current_user.get_id())
+        successful = save_document(document_data, user_doc_id, document_id, current_user.get_id())
+        if not successful:
+            return "Could not save the document", 500
 
     if PREDICT_ENTITIES in jobs:
         cursor = connection.cursor()
@@ -274,22 +284,30 @@ def predict():
         predict_entities(document_id, task_id, prediction_user_doc_id)
     if PREDICT_RELATIONS in jobs:
         if PREDICT_ENTITIES not in jobs:
-            document_data = json.loads(data.get('current_state', None))
-            if document_data is None:
-                document_data = load_document(document_id, user_id)
-            else:
-                # if using the annotations created by the user as foundation,
-                # the current status has to be saved first in order to disambiguate the ids of the annotations
-                user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-                successful = save_document(document_data, user_doc_id, document_id, current_user.get_id())
-                if not successful:
-                    return "Could not save the document", 500
-            # todo: only if not already created by predict_entities
             save_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, False)
-        predict_relations(prediction_user_doc_id, task_id)
+        predicted_pairs = predict_relations(prediction_user_doc_id, task_id)
+        if PREDICT_ENTITIES not in jobs:
+            remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc_id,
+                                              document_id, current_prediction_user)
 
     document_data = load_document(document_id, current_user.get_id(), True)
     return respond_with(document_data)
+
+
+def remove_entities_without_relations(pairs, document_data, user_doc_id, doc_id, user):
+    used_entities = set()
+    def add_entities_to_set(pair_tuple):
+        used_entities.add(pair_tuple[0])
+        used_entities.add(pair_tuple[1])
+
+    map(add_entities_to_set, pairs)
+    to_be_removed = map(lambda e: e['id'], filter(lambda d: d['id'] not in used_entities, document_data['denotations']))
+
+    cursor = connection.cursor()
+    id_string = "('" + "', '".join(to_be_removed) + "')"
+    cursor.execute('DELETE FROM LTN_DEVELOP.ENTITIES WHERE ID IN ' + id_string + ' AND USER_DOC_ID = ?', (user_doc_id,))
+    connection.commit()
+    cursor.close()
 
 
 def predict_entities(document_id, task_id, target_user_document_id):
@@ -341,7 +359,7 @@ def predict_relations(user_document_id, task_id):
     cursor.execute_prepared(ps, [params])
     pairs = cursor.fetchall()
 
-    store_predicted_relations(pairs, user_document_id)
+    return store_predicted_relations(pairs, user_document_id)
 
 
 def store_predicted_relations(pairs, user_document_id):
@@ -357,6 +375,8 @@ def store_predicted_relations(pairs, user_document_id):
         "INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID) VALUES (?, ?, ?, ?, ?)", tuples
     )
     connection.commit()
+    cursor.close()
+    return tuples
 
 
 def load_types():
@@ -393,7 +413,8 @@ def save_document(data, user_doc_id, document_id, user_id, is_visible = True):
         id_map = {}
         # neccessary, as TextAE does not create "originalId"s
         for annotation in annotations:
-            id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
+            if annotation.get('userId', 0) == 0:
+                id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
         print "saving relations"
         successful &= save_relations(user_doc_id, data['relations'], id_map)
         if successful:
@@ -476,12 +497,15 @@ def save_relations(user_doc_id, relations, id_map):
         else:
             return False
 
-    relation_tuples = map(lambda relation: (id_map[relation['subj']],
-                                            id_map[relation['obj']],
-                                            user_doc_id, 1,
-                                            type_id_dict.get(relation['pred']['code'], None),
-                                            relation['pred'].get('label', None)),
-                        relations)
+    relation_tuples = []
+    for relation in relations:
+        if id_map.get(relation['subj']) is not None and id_map.get(relation['obj']) is not None:
+            relation_tuples.append((id_map[relation['subj']],
+                                        id_map[relation['obj']],
+                                        user_doc_id, 1,
+                                        type_id_dict.get(relation['pred']['code'], None),
+                                        relation['pred'].get('label', None)))
+
     cursor.executemany("INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)",
                         relation_tuples)
     connection.commit()
