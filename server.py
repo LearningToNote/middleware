@@ -271,7 +271,7 @@ def predict():
                        (prediction_user_doc_id, current_prediction_user, document_id,))
         cursor.close()
         connection.commit()
-        predict_entities(document_id, prediction_user_doc_id)
+        predict_entities(document_id, task_id, prediction_user_doc_id)
     if PREDICT_RELATIONS in jobs:
         if PREDICT_ENTITIES not in jobs:
             document_data = json.loads(data.get('current_state', None))
@@ -287,14 +287,18 @@ def predict():
             # todo: only if not already created by predict_entities
             save_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, False)
         predict_relations(prediction_user_doc_id, task_id)
-        document_data = load_document(document_id, current_user.get_id(), True)
-        return respond_with(document_data)
 
-    return "Something went wrong.", 500
+    document_data = load_document(document_id, current_user.get_id(), True)
+    return respond_with(document_data)
 
 
-def predict_entities(document_id, target_user_document_id):
+def predict_entities(document_id, task_id, target_user_document_id):
     cursor = connection.cursor()
+
+    cursor.execute('select "DOMAIN" from LTN_DEVELOP.tasks WHERE id = ?', (task_id, ))
+    table_name = cursor.fetchone()[0]
+    index_name = "$TA_INDEX_" + table_name
+    er_index_name = "$TA_ER_INDEX_" + table_name
 
     cursor.execute("""
         select distinct fti.ta_offset as "start",
@@ -302,15 +306,15 @@ def predict_entities(document_id, target_user_document_id):
           fti.ta_token,
           fti.ta_type,
           t.id
-        from "LEARNING_TO_NOTE"."$TA_TEST_FTI" fti
-        join "LEARNING_TO_NOTE"."TYPES" t on t.code = fti.ta_type
-        join "LEARNING_TO_NOTE"."$TA_FTI" pos on fti.id = pos.id and fti.ta_offset = pos.ta_offset
-        where fti.id = ?
+        from "LTN_DEVELOP"."%s" fti
+        join "LTN_DEVELOP"."TYPES" t on t.code = fti.ta_type
+        join "LTN_DEVELOP"."%s" pos on fti.document_id = pos.document_id and fti.ta_offset = pos.ta_offset
+        where fti.document_id = ?
           and fti.ta_type like 'T___'
           and length(fti.ta_token) >= 3
           and pos.ta_type in ('noun', 'abbreviation', 'proper name')
         order by fti.ta_offset
-    """, (document_id,))
+    """ % (er_index_name, index_name), (document_id,))
 
     entities = list()
     offsets = list()
@@ -320,8 +324,8 @@ def predict_entities(document_id, target_user_document_id):
         entities.append((entity_id, target_user_document_id, int(row[4]), None, row[2]))
         offsets.append((row[0], row[1], entity_id, target_user_document_id))
 
-    cursor.executemany('insert into "LEARNING_TO_NOTE"."ENTITIES" VALUES (?, ?, ?, ?, ?)', entities)
-    cursor.executemany('insert into "LEARNING_TO_NOTE"."OFFSETS" VALUES (?, ?, ?, ?)', offsets)
+    cursor.executemany('insert into "LTN_DEVELOP"."ENTITIES" VALUES (?, ?, ?, ?, ?)', entities)
+    cursor.executemany('insert into "LTN_DEVELOP"."OFFSETS" VALUES (?, ?, ?, ?)', offsets)
     connection.commit()
     cursor.close()
 
