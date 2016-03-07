@@ -748,6 +748,7 @@ def get_current_prediction_user(user_id, show_predictions):
     else:
         return user_id
 
+
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
 
