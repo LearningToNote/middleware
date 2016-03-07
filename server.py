@@ -527,7 +527,7 @@ def get_text(cursor, document_id):
         cursor.execute_prepared(ps, [params])
         result = cursor.fetchone()
         if result:
-            text = str(result[0].read())
+            text = result[0].read()
     except Exception, e:
         print 'Error: ', e
     return text
