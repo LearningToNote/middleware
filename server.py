@@ -633,27 +633,30 @@ def return_entities():
     document_id = req['document_id']
     user1 = req['user1']
     user2 = req['user2']
+
     cursor = connection.cursor()
-    e1 = sorted(get_entities_for_user_document(cursor, document_id, user1), key=lambda x: x.start)
-    e2 = sorted(get_entities_for_user_document(cursor, document_id, user2), key=lambda x: x.start)
-    if len(e1) < len(e2):
-        shortList, longList = e1, e2
-    else:
-        shortList, longList = e2, e1
+    predictions = sorted(get_entities_for_user_document(cursor, document_id, user1), key=lambda x: x.start)
+    gold_standard = sorted(get_entities_for_user_document(cursor, document_id, user2), key=lambda x: x.start)
 
     p = 0
     matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, {}
 
-    for entity in longList:
-        while shortList[p].end < entity.start:
-            if p == len(shortList) - 1:
+    for entity in gold_standard:
+        if len(predictions) == 0:
+            misses += 1
+            continue
+        while predictions[p].end < entity.start:
+            if p == len(predictions) - 1:
                 break
             p += 1
         can_miss = True
-        for candidate in shortList[p:]:
+        for candidate in predictions[p:]:
             if candidate.start > entity.end:
                 if can_miss:
                     misses += 1
+                    can_miss = False
+                break
+            if candidate.end < entity.start:
                 break
             can_miss = False
             if candidate.start != entity.start:
@@ -662,12 +665,9 @@ def return_entities():
                         wrong_type["right-aligns"] = wrong_type.get("right-aligns", 0) + 1
                     right_aligns += 1
                 else:
-                    if candidate.end < entity.start:
-                        misses += 1
-                    else:
-                        if candidate.type != entity.type:
-                            wrong_type["overlaps"] = wrong_type.get("overlaps", 0) + 1
-                        overlaps += 1
+                    if candidate.type != entity.type:
+                        wrong_type["overlaps"] = wrong_type.get("overlaps", 0) + 1
+                    overlaps += 1
             else:
                 if candidate.end == entity.end:
                     if candidate.type != entity.type:
