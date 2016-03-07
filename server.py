@@ -278,7 +278,7 @@ def predict():
     if PREDICT_ENTITIES in jobs:
         cursor = connection.cursor()
         cursor.execute('INSERT INTO "LTN_DEVELOP"."USER_DOCUMENTS" '
-                       'VALUES (?, ?, ?, 1, current_timestamp, current_timestamp)',
+                       'VALUES (?, ?, ?, 0, current_timestamp, current_timestamp)',
                        (prediction_user_doc_id, current_prediction_user, document_id,))
         cursor.close()
         connection.commit()
