@@ -542,7 +542,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
         denotation['span'] = {}
         denotation['span']['begin'] = result[2]
         denotation['span']['end'] = result[3]
-        # neccessary for split annotations
+        # necessary for split annotations
         denotation['originalId'] = str(result[0])
         denotation['userId'] = user_id_mapping.get(creator)
         denotations.append(denotation)
