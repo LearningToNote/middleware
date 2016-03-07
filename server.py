@@ -239,7 +239,7 @@ def get_document(document_id):
         if successful:
             return ""
         else:
-            return "An error occured while saving the document.", 500
+            return "An error occurred while saving the document.", 500
     if request.method == 'DELETE':
         successful = False
         try:
@@ -262,36 +262,80 @@ def predict():
     user_id = data.get('user_id', current_user.get_id())
     current_prediction_user = prediction_user_for_user(user_id)
     delete_user_document(load_user_doc_id(document_id, current_prediction_user))
-    successful = False
+    prediction_user_doc_id = load_user_doc_id(document_id, current_prediction_user)
+
     if PREDICT_ENTITIES in jobs:
-        pass
+        cursor = connection.cursor()
+        cursor.execute('INSERT INTO "LTN_DEVELOP"."USER_DOCUMENTS" '
+                       'VALUES (?, ?, ?, 1, current_timestamp, current_timestamp)',
+                       (prediction_user_doc_id, current_prediction_user, document_id,))
+        cursor.close()
+        connection.commit()
+        predict_entities(document_id, task_id, prediction_user_doc_id)
     if PREDICT_RELATIONS in jobs:
-        document_data = json.loads(data.get('current_state', None))
-        if document_data is None:
-            document_data = load_document(document_id, user_id)
-        else:
-            # if using the annotations created by the user as foundation,
-            # the current status has to be saved first in order to disambiguate the ids of the annotations
-            user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-            successful = save_document(document_data, user_doc_id, document_id, current_user.get_id())
-            if not successful:
-                return "Could not save the document", 500
+        if PREDICT_ENTITIES not in jobs:
+            document_data = json.loads(data.get('current_state', None))
+            if document_data is None:
+                document_data = load_document(document_id, user_id)
+            else:
+                # if using the annotations created by the user as foundation,
+                # the current status has to be saved first in order to disambiguate the ids of the annotations
+                user_doc_id = load_user_doc_id(document_id, current_user.get_id())
+                successful = save_document(document_data, user_doc_id, document_id, current_user.get_id())
+                if not successful:
+                    return "Could not save the document", 500
+            # todo: only if not already created by predict_entities
+            save_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, False)
+        predict_relations(prediction_user_doc_id, task_id)
 
-        user_doc_id = load_user_doc_id(document_id, current_prediction_user)
-        successful = save_document(document_data, user_doc_id, document_id, current_prediction_user, False)
-        predict_relations(user_doc_id, task_id)
-        document_data = load_document(document_id, current_user.get_id(), True)
-        return respond_with(document_data)
+    document_data = load_document(document_id, current_user.get_id(), True)
+    return respond_with(document_data)
 
-    return "Something went wrong.", 500
+
+def predict_entities(document_id, task_id, target_user_document_id):
+    cursor = connection.cursor()
+
+    cursor.execute('select "DOMAIN" from LTN_DEVELOP.tasks WHERE id = ?', (task_id, ))
+    table_name = cursor.fetchone()[0]
+    index_name = "$TA_INDEX_" + table_name
+    er_index_name = "$TA_ER_INDEX_" + table_name
+
+    cursor.execute("""
+        select distinct fti.ta_offset as "start",
+          fti.ta_offset + length(fti.ta_token) as "end",
+          fti.ta_token,
+          fti.ta_type,
+          t.id
+        from "LTN_DEVELOP"."%s" fti
+        join "LTN_DEVELOP"."TYPES" t on t.code = fti.ta_type
+        join "LTN_DEVELOP"."%s" pos on fti.document_id = pos.document_id and fti.ta_offset = pos.ta_offset
+        where fti.document_id = ?
+          and fti.ta_type like 'T___'
+          and length(fti.ta_token) >= 3
+          and pos.ta_type in ('noun', 'abbreviation', 'proper name')
+        order by fti.ta_offset
+    """ % (er_index_name, index_name), (document_id,))
+
+    entities = list()
+    offsets = list()
+
+    for row in cursor.fetchall():
+        entity_id = target_user_document_id + str(row[0]) + str(row[2]) + str(row[3])
+        entities.append((entity_id, target_user_document_id, int(row[4]), None, row[2]))
+        offsets.append((row[0], row[1], entity_id, target_user_document_id))
+
+    cursor.executemany('insert into "LTN_DEVELOP"."ENTITIES" VALUES (?, ?, ?, ?, ?)', entities)
+    cursor.executemany('insert into "LTN_DEVELOP"."OFFSETS" VALUES (?, ?, ?, ?)', offsets)
+    connection.commit()
+    cursor.close()
 
 
 def predict_relations(user_document_id, task_id):
     cursor = connection.cursor()
 
     sql_to_prepare = 'CALL LTN_DEVELOP.PREDICT_UD (?, ?, ?)'
-    params = {'UD_ID':user_document_id,
-            'TASK_ID':str(task_id)}
+    params = {'UD_ID': user_document_id,
+              'TASK_ID': str(task_id)}
     psid = cursor.prepare(sql_to_prepare)
     ps = cursor.get_prepared_statement(psid)
     cursor.execute_prepared(ps, [params])
@@ -305,11 +349,9 @@ def store_predicted_relations(pairs, user_document_id):
     cursor.execute("DELETE FROM LTN_DEVELOP.PAIRS WHERE USER_DOC_ID = ?", (user_document_id,))
 
     tuples = []
-    # import pdb;pdb.set_trace()
     pairs = filter(lambda x: x[0] != -1, pairs)
     for ddi, e1_id, e2_id in pairs:
         tuples.append((e1_id, e2_id, user_document_id, 1, ddi))
-
 
     cursor.executemany(
         "INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID) VALUES (?, ?, ?, ?, ?)", tuples
@@ -349,7 +391,7 @@ def save_document(data, user_doc_id, document_id, user_id, is_visible = True):
     if successful:
         print "saved annotations successfully"
         id_map = {}
-        #neccessary, as TextAE does not create "originalId"s
+        # neccessary, as TextAE does not create "originalId"s
         for annotation in annotations:
             id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
         print "saving relations"
@@ -389,7 +431,7 @@ def delete_annotation_data(user_doc_id):
 
 
 def save_annotations(user_doc_id, annotations):
-    #only save annotations from the current user, defined as userId 0 at loading time
+    # only save annotations from the current user, defined as userId 0 at loading time
     filtered_annotations = filter(lambda annotation: annotation.get('userId', 0) == 0, annotations)
     cursor = connection.cursor()
     if not user_doc_id:
@@ -542,7 +584,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
         denotation['span'] = {}
         denotation['span']['begin'] = result[2]
         denotation['span']['end'] = result[3]
-        # neccessary for split annotations
+        # necessary for split annotations
         denotation['originalId'] = str(result[0])
         denotation['userId'] = user_id_mapping.get(creator)
         denotations.append(denotation)
@@ -633,27 +675,30 @@ def return_entities():
     document_id = req['document_id']
     user1 = req['user1']
     user2 = req['user2']
+
     cursor = connection.cursor()
-    e1 = sorted(get_entities_for_user_document(cursor, document_id, user1), key=lambda x: x.start)
-    e2 = sorted(get_entities_for_user_document(cursor, document_id, user2), key=lambda x: x.start)
-    if len(e1) < len(e2):
-        shortList, longList = e1, e2
-    else:
-        shortList, longList = e2, e1
+    predictions = sorted(get_entities_for_user_document(cursor, document_id, user1), key=lambda x: x.start)
+    gold_standard = sorted(get_entities_for_user_document(cursor, document_id, user2), key=lambda x: x.start)
 
     p = 0
     matches, left_aligns, right_aligns, overlaps, misses, wrong_type = 0, 0, 0, 0, 0, {}
 
-    for entity in longList:
-        while shortList[p].end < entity.start:
-            if p == len(shortList) - 1:
+    for entity in gold_standard:
+        if len(predictions) == 0:
+            misses += 1
+            continue
+        while predictions[p].end < entity.start:
+            if p == len(predictions) - 1:
                 break
             p += 1
         can_miss = True
-        for candidate in shortList[p:]:
+        for candidate in predictions[p:]:
             if candidate.start > entity.end:
                 if can_miss:
                     misses += 1
+                    can_miss = False
+                break
+            if candidate.end < entity.start:
                 break
             can_miss = False
             if candidate.start != entity.start:
@@ -662,12 +707,9 @@ def return_entities():
                         wrong_type["right-aligns"] = wrong_type.get("right-aligns", 0) + 1
                     right_aligns += 1
                 else:
-                    if candidate.end < entity.start:
-                        misses += 1
-                    else:
-                        if candidate.type != entity.type:
-                            wrong_type["overlaps"] = wrong_type.get("overlaps", 0) + 1
-                        overlaps += 1
+                    if candidate.type != entity.type:
+                        wrong_type["overlaps"] = wrong_type.get("overlaps", 0) + 1
+                    overlaps += 1
             else:
                 if candidate.end == entity.end:
                     if candidate.type != entity.type:
@@ -747,6 +789,7 @@ def get_current_prediction_user(user_id, show_predictions):
         return prediction_user_for_user(user_id)
     else:
         return user_id
+
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
