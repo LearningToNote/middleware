@@ -226,6 +226,7 @@ def get_document(document_id):
             result = load_document(document_id, current_user.get_id())
             return respond_with(result)
         except Exception, e:
+            print e
             reset_connection()
             return 'Error while loading the document.', 500
     if request.method == 'POST':
@@ -391,7 +392,7 @@ def save_document(data, user_doc_id, document_id, user_id, is_visible = True):
     if successful:
         print "saved annotations successfully"
         id_map = {}
-        # neccessary, as TextAE does not create "originalId"s
+        # necessary, as TextAE does not create "originalId"s
         for annotation in annotations:
             id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
         print "saving relations"
@@ -440,24 +441,24 @@ def save_annotations(user_doc_id, annotations):
     type_id_dict = {}
     types = set(map(lambda annotation: (annotation['obj']['code']), filtered_annotations))
     for current_type in types:
-        print current_type
         type_id = load_type_id(current_type)
         if type_id is not None:
             type_id_dict[current_type] = str(type_id)
         else:
             return False
-    print type_id_dict
     print "inserting new annotations..."
-    print filtered_annotations
     annotation_tuples = map(lambda annotation: (annotation.get('originalId',
                                                 annotation['id']),
                                                 user_doc_id,
                                                 type_id_dict.get(annotation['obj']['code'], None),
                                                 annotation['obj'].get('label', None)),
                             filtered_annotations)
-    cursor.executemany("INSERT INTO LTN_DEVELOP.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) VALUES (?, ?, ?, ?)", annotation_tuples)
+    cursor.executemany("INSERT INTO LTN_DEVELOP.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) "
+                       "VALUES (?, ?, ?, ?)", annotation_tuples)
     print "inserting new offsets..."
-    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'], annotation.get('originalId', annotation['id']), user_doc_id), filtered_annotations)
+    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'],
+                                            annotation.get('originalId', annotation['id']), user_doc_id),
+                        filtered_annotations)
     cursor.executemany("INSERT INTO LTN_DEVELOP.OFFSETS VALUES (?, ?, ?, ?)", offset_tuples)
     connection.commit()
     return True
@@ -469,7 +470,6 @@ def save_relations(user_doc_id, relations, id_map):
     type_id_dict = {}
     types = set(map(lambda relation: (relation['pred']['code']), relations))
     for current_type in types:
-        print current_type
         type_id = load_type_id(current_type)
         if type_id is not None:
             type_id_dict[current_type] = str(type_id)
@@ -482,22 +482,23 @@ def save_relations(user_doc_id, relations, id_map):
                                             type_id_dict.get(relation['pred']['code'], None),
                                             relation['pred'].get('label', None)),
                         relations)
-    cursor.executemany("INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) VALUES (?, ?, ?, ?, ?, ?)",
-                        relation_tuples)
+    cursor.executemany("INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) "
+                       "VALUES (?, ?, ?, ?, ?, ?)", relation_tuples)
     connection.commit()
     return True
 
 
 def load_user_doc_id(document_id, user_id):
     cursor = connection.cursor()
-    cursor.execute("SELECT ID FROM LTN_DEVELOP.USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?", (document_id, user_id))
+    cursor.execute("SELECT ID FROM LTN_DEVELOP.USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?",
+                   (document_id, user_id))
     result = cursor.fetchone()
     if result:
         return str(result[0])
     return str(user_id) + "_" + str(document_id)
 
 
-def load_document(document_id, user_id, show_predictions = False):
+def load_document(document_id, user_id, show_predictions=False):
     cursor = connection.cursor()
     result = {}
     print "Loading information for document_id: " + str(document_id) + " and user: " + str(current_user.get_id())
