@@ -262,27 +262,68 @@ def predict():
     user_id = data.get('user_id', current_user.get_id())
     current_prediction_user = prediction_user_for_user(user_id)
     delete_user_document(load_user_doc_id(document_id, current_prediction_user))
-    if PREDICT_ENTITIES in jobs:
-        pass
-    if PREDICT_RELATIONS in jobs:
-        document_data = json.loads(data.get('current_state', None))
-        if document_data is None:
-            document_data = load_document(document_id, user_id)
-        else:
-            # if using the annotations created by the user as foundation,
-            # the current status has to be saved first in order to disambiguate the ids of the annotations
-            user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-            successful = save_document(document_data, user_doc_id, document_id, current_user.get_id())
-            if not successful:
-                return "Could not save the document", 500
+    prediction_user_doc_id = load_user_doc_id(document_id, current_prediction_user)
 
-        user_doc_id = load_user_doc_id(document_id, current_prediction_user)
-        save_document(document_data, user_doc_id, document_id, current_prediction_user, False)
-        predict_relations(user_doc_id, task_id)
+    if PREDICT_ENTITIES in jobs:
+        cursor = connection.cursor()
+        cursor.execute('INSERT INTO "LTN_DEVELOP"."USER_DOCUMENTS" '
+                       'VALUES (?, ?, ?, 1, current_timestamp, current_timestamp)',
+                       (prediction_user_doc_id, current_prediction_user, document_id,))
+        cursor.close()
+        connection.commit()
+        predict_entities(document_id, prediction_user_doc_id)
+    if PREDICT_RELATIONS in jobs:
+        if PREDICT_ENTITIES not in jobs:
+            document_data = json.loads(data.get('current_state', None))
+            if document_data is None:
+                document_data = load_document(document_id, user_id)
+            else:
+                # if using the annotations created by the user as foundation,
+                # the current status has to be saved first in order to disambiguate the ids of the annotations
+                user_doc_id = load_user_doc_id(document_id, current_user.get_id())
+                successful = save_document(document_data, user_doc_id, document_id, current_user.get_id())
+                if not successful:
+                    return "Could not save the document", 500
+            # todo: only if not already created by predict_entities
+            save_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, False)
+        predict_relations(prediction_user_doc_id, task_id)
         document_data = load_document(document_id, current_user.get_id(), True)
         return respond_with(document_data)
 
     return "Something went wrong.", 500
+
+
+def predict_entities(document_id, target_user_document_id):
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        select distinct fti.ta_offset as "start",
+          fti.ta_offset + length(fti.ta_token) as "end",
+          fti.ta_token,
+          fti.ta_type,
+          t.id
+        from "LEARNING_TO_NOTE"."$TA_TEST_FTI" fti
+        join "LEARNING_TO_NOTE"."TYPES" t on t.code = fti.ta_type
+        join "LEARNING_TO_NOTE"."$TA_FTI" pos on fti.id = pos.id and fti.ta_offset = pos.ta_offset
+        where fti.id = ?
+          and fti.ta_type like 'T___'
+          and length(fti.ta_token) >= 3
+          and pos.ta_type in ('noun', 'abbreviation', 'proper name')
+        order by fti.ta_offset
+    """, (document_id,))
+
+    entities = list()
+    offsets = list()
+
+    for row in cursor.fetchall():
+        entity_id = target_user_document_id + str(row[0]) + str(row[2]) + str(row[3])
+        entities.append((entity_id, target_user_document_id, int(row[4]), None, row[2]))
+        offsets.append((row[0], row[1], entity_id, target_user_document_id))
+
+    cursor.executemany('insert into "LEARNING_TO_NOTE"."ENTITIES" VALUES (?, ?, ?, ?, ?)', entities)
+    cursor.executemany('insert into "LEARNING_TO_NOTE"."OFFSETS" VALUES (?, ?, ?, ?)', offsets)
+    connection.commit()
+    cursor.close()
 
 
 def predict_relations(user_document_id, task_id):
@@ -304,7 +345,6 @@ def store_predicted_relations(pairs, user_document_id):
     cursor.execute("DELETE FROM LTN_DEVELOP.PAIRS WHERE USER_DOC_ID = ?", (user_document_id,))
 
     tuples = []
-    # import pdb;pdb.set_trace()
     pairs = filter(lambda x: x[0] != -1, pairs)
     for ddi, e1_id, e2_id in pairs:
         tuples.append((e1_id, e2_id, user_document_id, 1, ddi))
