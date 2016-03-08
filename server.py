@@ -39,6 +39,9 @@ PREDICT_RELATIONS = 'relations'
 TYPE_PLAINTEXT = 'plaintext'
 TYPE_BIOC = 'bioc'
 
+EXPORT_DOCUMENT = 'document'
+EXPORT_TASK = 'task'
+
 
 def init():
     try_reconnecting()
@@ -259,6 +262,24 @@ def get_document(document_id):
         else:
             return 'Deleted.', 200
 
+
+@app.route('/export/<object_id>', methods=['POST'])
+def export(object_id):
+    data = request.get_json()
+    object_type = EXPORT_DOCUMENT
+    result = ""
+    if data is not None:
+        object_type = data.get('type', EXPORT_DOCUMENT)
+    if object_type == EXPORT_DOCUMENT:
+        document = load_document(object_id, current_user.get_id())
+        bCollection = bioc.BioCCollection()
+        bDocument = create_bioc_document_from_document_json(document)
+        bCollection.add_document(bDocument)
+        result = bCollection.tobioc()
+    else:
+
+        pass
+    return result, 200
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -848,6 +869,37 @@ def create_document_in_database(document_id, document_text, document_visibility,
                     document_visibility, datetime.now(), datetime.now()))
     connection.commit()
     return "Successfully imported", 201
+
+
+def create_bioc_document_from_document_json(document):
+    bDocument = bioc.BioCDocument()
+    bDocument.id = document['sourceid']
+    passage = bioc.BioCPassage()
+    passage.text = document['text']
+    passage.offset = 0
+    for denotation in document['denotations']:
+        annotation = bioc.BioCAnnotation()
+        annotation.id = denotation['id']
+        location = bioc.BioCLocation(0, 0)
+        location.offset = denotation['span']['begin']
+        location.length = denotation['span']['end'] - denotation['span']['begin']
+        annotation.locations.append(location)
+        annotation.text = document['text'][denotation['span']['begin']:denotation['span']['end']]
+        annotation.infons = denotation['obj']
+        passage.add_annotation(annotation)
+    for relation in document['relations']:
+        bRelation = bioc.BioCRelation()
+        bRelation.id = relation['id']
+        startNode = bioc.BioCNode('', '')
+        endNode = bioc.BioCNode('', '')
+        startNode.refid = relation['subj']
+        endNode.refid = relation['obj']
+        bRelation.add_node(startNode)
+        bRelation.add_node(endNode)
+        bRelation.infons = relation['pred']
+        passage.add_relation(bRelation)
+    bDocument.add_passage(passage)
+    return bDocument
 
 
 def prediction_user_for_user(user_id):
