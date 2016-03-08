@@ -9,6 +9,9 @@ from datetime import datetime
 
 from user import User
 
+import bioc
+import StringIO
+
 Entity = namedtuple('Entity', ['id', 'user_doc_id', 'type', 'start', 'end'])
 
 static_folder = "static"
@@ -32,6 +35,9 @@ login_manager.init_app(app)
 
 PREDICT_ENTITIES = 'entities'
 PREDICT_RELATIONS = 'relations'
+
+TYPE_PLAINTEXT = 'plaintext'
+TYPE_BIOC = 'bioc'
 
 
 def init():
@@ -775,12 +781,51 @@ def import_document():
         return "No user is logged in", 401
 
     req = request.get_json()
-    document_id = req['document_id']
-    document_text = req['text']
+    doc_type = req.get('type', TYPE_PLAINTEXT)
     task = req['task']
-    document_visibility = 1
-    if 'visibility' in req:
-        document_visibility = int(req['visibility'])
+
+    documents = []
+    if doc_type == TYPE_PLAINTEXT:
+        documents.append(req)
+    elif doc_type == TYPE_BIOC:
+        documents = extract_documents_from_bioc(req['text'], req['document_id'])
+    else:
+        return "Document type not supported", 400
+
+    for document in documents:
+        message, code = create_document_in_database(document['document_id'],
+                                                    document['text'],
+                                                    int(document.get('visibility', 1)),
+                                                    task)
+        if code != 201:
+            return message, code
+
+    return "Successfully imported", 201
+
+
+def extract_documents_from_bioc(bioc_text, id_prefix):
+    string_doc = StringIO.StringIO(bioc_text.encode('utf-8'))
+    bioc_collection = bioc.parse(string_doc)
+    documents = []
+    for bioc_doc in bioc_collection.documents:
+        doc_text = ''
+        for passage in bioc_doc.passages:
+            if passage.infons.get('type') != 'title':
+                if len(passage.text) > 0:
+                    doc_text += passage.text
+                else:
+                    for sentence in passage:
+                        doc_text += sentence.text
+        document = {
+            'document_id': id_prefix + '__' + bioc_doc.id,
+            'text': doc_text,
+        }
+        documents.append(document)
+    string_doc.close()
+    return documents
+
+
+def create_document_in_database(document_id, document_text, document_visibility, task):
     cursor = connection.cursor()
     cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.DOCUMENTS WHERE ID = ?", (document_id,))
     result = cursor.fetchone()
@@ -790,7 +835,7 @@ def import_document():
     sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?, ?)'
     params = {
         'DOCUMENT_ID': document_id,
-        'DOCUMENT_TEXT': document_text,
+        'DOCUMENT_TEXT': document_text.replace("'", "''"),
         'TASK': task
     }
     psid = cursor.prepare(sql_to_prepare)
@@ -802,7 +847,7 @@ def import_document():
                    (current_user.get_id() + '_' + document_id, current_user.get_id(), document_id,
                     document_visibility, datetime.now(), datetime.now()))
     connection.commit()
-    return "Document imported", 201
+    return "Successfully imported", 201
 
 
 def prediction_user_for_user(user_id):
