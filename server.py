@@ -158,7 +158,11 @@ def manage_task(task_id):
                              'user_id': result[3], 'user_name': result[4], 'documents': documents})
     elif request.method == 'POST':
         req = request.get_json()
-        sql_to_prepare = 'CALL LTN_DEVELOP.update_task (?, ?, ?, ?, ?)'
+        if req.get('task_id') is not None:
+            sql_to_prepare = 'CALL LTN_DEVELOP.update_task (?, ?, ?, ?, ?)'
+        else:
+            sql_to_prepare = 'CALL LTN_DEVELOP.add_task (?, ?, ?, ?, ?)'
+
         params = {
             'TASK_ID': req.get('task_id'),
             'TASK_NAME': req.get('task_name'),
