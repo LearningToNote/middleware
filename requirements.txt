@@ -1,3 +1,4 @@
+bioc
 flask
 flask-cors
 flask-login
