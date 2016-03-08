@@ -127,12 +127,12 @@ def get_user(user_id):
 @app.route('/tasks')
 def get_tasks():
     cursor = connection.cursor()
-    cursor.execute('SELECT t.id, t.name, t.domain, t.author, u.name '
+    cursor.execute('SELECT t.id, t.name, t.domain, t.config, t.author, u.name '
                    'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author')
     tasks = list()
     for result in cursor.fetchall():
-        tasks.append({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2],
-                      'user_id': result[3], 'user_name': result[4]})
+        tasks.append({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2], 'task_config': result[3],
+                      'user_id': result[4], 'user_name': result[5]})
     return respond_with(tasks)
 
 
@@ -162,23 +162,28 @@ def manage_task(task_id):
         params = {
             'TASK_ID': req.get('task_id'),
             'TASK_NAME': req.get('task_name'),
-            'TABLE_NAME': req.get('table_name'),
-            'ER_ANALYSIS_CONFIG': req.get('config'),
-            'AUTHOR': req.get('author')
+            'TABLE_NAME': req.get('task_domain'),
+            'ER_ANALYSIS_CONFIG': req.get('task_config'),
+            'NEW_AUTHOR': req.get('user_id')
         }
         psid = cursor.prepare(sql_to_prepare)
         ps = cursor.get_prepared_statement(psid)
-        cursor.execute_prepared(ps, [params])
-        connection.commit()
+        try:
+            cursor.execute_prepared(ps, [params])
+            connection.commit()
+        except:
+            pass  # Rows affected warning
         return 'OK', 200
     elif request.method == 'DELETE':
-        req = request.get_json()
         sql_to_prepare = 'CALL LTN_DEVELOP.delete_task (?)'
-        params = {'TASK_ID': req.get('task_id')}
+        params = {'TASK_ID': task_id}
         psid = cursor.prepare(sql_to_prepare)
         ps = cursor.get_prepared_statement(psid)
-        cursor.execute_prepared(ps, [params])
-        connection.commit()
+        try:
+            cursor.execute_prepared(ps, [params])
+            connection.commit()
+        except:
+            pass  # Rows affected warning
         return 'OK', 200
 
 
