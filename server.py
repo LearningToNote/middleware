@@ -39,9 +39,6 @@ PREDICT_RELATIONS = 'relations'
 TYPE_PLAINTEXT = 'plaintext'
 TYPE_BIOC = 'bioc'
 
-EXPORT_DOCUMENT = 'document'
-EXPORT_TASK = 'task'
-
 
 def init():
     try_reconnecting()
@@ -268,22 +265,13 @@ def get_document(document_id):
             return 'Deleted.', 200
 
 
-@app.route('/export/<object_id>', methods=['POST'])
-def export(object_id):
-    data = request.get_json()
-    object_type = EXPORT_DOCUMENT
-    result = ""
-    if data is not None:
-        object_type = data.get('type', EXPORT_DOCUMENT)
-    if object_type == EXPORT_DOCUMENT:
-        document = load_document(object_id, current_user.get_id())
-        bCollection = bioc.BioCCollection()
-        bDocument = create_bioc_document_from_document_json(document)
-        bCollection.add_document(bDocument)
-        result = bCollection.tobioc()
-    else:
-
-        pass
+@app.route('/export/<document_id>', methods=['POST'])
+def export(document_id):
+    document = load_document(document_id, current_user.get_id())
+    bCollection = bioc.BioCCollection()
+    bDocument = create_bioc_document_from_document_json(document)
+    bCollection.add_document(bDocument)
+    result = bCollection.tobioc()
     return result, 200
 
 @app.route('/predict', methods=['POST'])
@@ -877,6 +865,7 @@ def create_document_in_database(document_id, document_text, document_visibility,
 
 
 def create_bioc_document_from_document_json(document):
+    # TODO: only export annotations of user 0
     bDocument = bioc.BioCDocument()
     bDocument.id = document['sourceid']
     passage = bioc.BioCPassage()
