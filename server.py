@@ -276,7 +276,9 @@ def export(document_id):
     bDocument = create_bioc_document_from_document_json(document)
     bCollection.add_document(bDocument)
     result = bCollection.tobioc()
-    return result, 200
+    response = Response(result, mimetype='text/xml')
+    response.headers["Content-Disposition"] = "attachment; filename=" + document_id + ".xml"
+    return response
 
 @app.route('/predict', methods=['POST'])
 def predict():
