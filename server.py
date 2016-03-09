@@ -269,7 +269,7 @@ def get_document(document_id):
             return 'Deleted.', 200
 
 
-@app.route('/export/<document_id>', methods=['POST'])
+@app.route('/export/<document_id>', methods=['GET'])
 def export(document_id):
     document = load_document(document_id, current_user.get_id())
     bCollection = bioc.BioCCollection()
@@ -875,7 +875,11 @@ def create_bioc_document_from_document_json(document):
     passage = bioc.BioCPassage()
     passage.text = document['text']
     passage.offset = 0
+    annotation_user_map = {}
     for denotation in document['denotations']:
+        annotation_user_map[denotation['id']] = denotation['userId']
+        if denotation['userId'] != 0:
+            continue
         annotation = bioc.BioCAnnotation()
         annotation.id = denotation['id']
         location = bioc.BioCLocation(0, 0)
@@ -886,6 +890,10 @@ def create_bioc_document_from_document_json(document):
         annotation.infons = denotation['obj']
         passage.add_annotation(annotation)
     for relation in document['relations']:
+        subj_from_current_user = annotation_user_map[relation['subj']] == 0
+        obj_from_current_user = annotation_user_map[relation['obj']] == 0
+        if not (subj_from_current_user and obj_from_current_user):
+            continue
         bRelation = bioc.BioCRelation()
         bRelation.id = relation['id']
         startNode = bioc.BioCNode('', '')
