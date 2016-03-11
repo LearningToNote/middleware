@@ -248,7 +248,8 @@ def get_document(document_id):
         successful = False
         try:
             user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-            successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id())
+            import pdb; pdb.set_trace()
+            successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id(), request.get_json()['task_id'])
         except Exception, e:
             print e
             reset_connection()
@@ -297,7 +298,7 @@ def predict():
     else:
         # the current status has to be saved first in order to disambiguate the ids of the annotations
         user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-        successful = save_document(document_data, user_doc_id, document_id, current_user.get_id())
+        successful = save_document(document_data, user_doc_id, document_id, current_user.get_id(), task_id)
         if not successful:
             return "Could not save the document", 500
 
@@ -311,7 +312,7 @@ def predict():
         predict_entities(document_id, task_id, prediction_user_doc_id)
     if PREDICT_RELATIONS in jobs:
         if PREDICT_ENTITIES not in jobs:
-            save_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, False)
+            save_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, task_id, False)
         predicted_pairs = predict_relations(prediction_user_doc_id, task_id)
         if PREDICT_ENTITIES not in jobs:
             remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc_id,
@@ -430,7 +431,7 @@ def load_type_id(code):
     return None
 
 
-def save_document(data, user_doc_id, document_id, user_id, is_visible = True):
+def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible = True):
     annotations = data['denotations']
     successful = True
     create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible)
@@ -448,6 +449,7 @@ def save_document(data, user_doc_id, document_id, user_id, is_visible = True):
         successful &= save_relations(user_doc_id, data['relations'], id_map)
         if successful:
             print "saved relations successfully"
+            call_start_training(task_id)
         else:
             print "did not save relations successfully"
     else:
@@ -993,6 +995,20 @@ def create_bioc_document_from_document_json(document):
         passage.add_relation(bRelation)
     bDocument.add_passage(passage)
     return bDocument
+
+def call_start_training(task_id):
+    sql_to_prepare = 'CALL LTN_DEVELOP.LTN_TRAIN (?)'
+    print(task_id)
+    params = {
+        'TASK_ID': task_id
+    }
+    psid = cursor.prepare(sql_to_prepare)
+    ps = cursor.get_prepared_statement(psid)
+    try:
+        cursor.execute_prepared(ps, [params])
+        connection.commit()
+    except Exception, e:
+        print 'Error: ', e
 
 
 def prediction_user_for_user(user_id):
