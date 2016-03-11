@@ -486,18 +486,16 @@ def save_annotations(user_doc_id, annotations):
         return False
     print "loading type ids...."
     type_id_dict = {}
-    types = set(map(lambda annotation: (annotation['obj']['code']), filtered_annotations))
+    types = set(map(lambda annotation: annotation['obj'].get('code'), filtered_annotations))
     for current_type in types:
         type_id = load_type_id(current_type)
         if type_id is not None:
             type_id_dict[current_type] = str(type_id)
-        else:
-            return False
     print "inserting new annotations..."
     annotation_tuples = map(lambda annotation: (annotation.get('originalId',
                                                 annotation['id']),
                                                 user_doc_id,
-                                                type_id_dict.get(annotation['obj']['code'], None),
+                                                type_id_dict.get(annotation['obj'].get('code'), None),
                                                 annotation['obj'].get('label', None)),
                             filtered_annotations)
     cursor.executemany("INSERT INTO LTN_DEVELOP.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) "
@@ -515,13 +513,11 @@ def save_relations(user_doc_id, relations, id_map):
     cursor = connection.cursor()
     print "loading type ids...."
     type_id_dict = {}
-    types = set(map(lambda relation: (relation['pred']['code']), relations))
+    types = set(map(lambda relation: relation['pred'].get('code'), relations))
     for current_type in types:
         type_id = load_type_id(current_type)
         if type_id is not None:
             type_id_dict[current_type] = str(type_id)
-        else:
-            return False
 
     relation_tuples = []
     for relation in relations:
@@ -529,13 +525,17 @@ def save_relations(user_doc_id, relations, id_map):
             relation_tuples.append((id_map[relation['subj']],
                                         id_map[relation['obj']],
                                         user_doc_id, 1,
-                                        type_id_dict.get(relation['pred']['code'], None),
+                                        type_id_dict.get(relation['pred'].get('code'), None),
                                         relation['pred'].get('label', None)))
 
     cursor.executemany("INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) "
                        "VALUES (?, ?, ?, ?, ?, ?)", relation_tuples)
     connection.commit()
     return True
+
+
+def create_new_user_doc_id(user_id, document_id):
+    return str(user_id) + '_' + str(document_id)
 
 
 def load_user_doc_id(document_id, user_id):
@@ -545,7 +545,7 @@ def load_user_doc_id(document_id, user_id):
     result = cursor.fetchone()
     if result:
         return str(result[0])
-    return str(user_id) + "_" + str(document_id)
+    return create_new_user_doc_id(user_id, document_id)
 
 
 def load_document(document_id, user_id, show_predictions=False):
@@ -605,9 +605,11 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
     current_user_info = {'name': 'You', 'color': 'darkgreen'}
     user_info = {0: current_user_info}
     annotation_id_map = {}
+    user_offset = 1
     if current_prediction_user != user_id:
         user_info[-1] = prediction_engine_info
         user_id_mapping[current_prediction_user] = -1
+        user_offset = 2
     for result in cursor.fetchall():
         denotation = {}
         current_id = str(result[0])
@@ -622,7 +624,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
             increment = 1
         if not creator in user_id_mapping and creator != current_prediction_user:
             new_id = len(user_id_mapping)
-            user_info[new_id] = {'name': str(result[9]), 'color': colors[(new_id - 1) % len(colors)]}
+            user_info[new_id] = {'name': str(result[9]), 'color': colors[(new_id - user_offset) % len(colors)]}
             user_id_mapping[creator] = new_id
 
         anno_info = {"code": str(result[4]),
@@ -797,7 +799,8 @@ def fetch_pubmed_abstract(pubmed_id):
 
 @app.route('/import', methods=['POST'])
 def import_document():
-    if current_user.get_id() is None:
+    user_id = current_user.get_id()
+    if user_id is None:
         return "No user is logged in", 401
 
     req = request.get_json()
@@ -813,10 +816,17 @@ def import_document():
         return "Document type not supported", 400
 
     for document in documents:
-        message, code = create_document_in_database(document['document_id'],
+        document_id = document['document_id']
+        message, code = create_document_in_database(document_id,
                                                     document['text'],
                                                     int(document.get('visibility', 1)),
                                                     task)
+        if code == 201 and doc_type == TYPE_BIOC:
+            save_document(document,
+                          load_user_doc_id(document_id, user_id),
+                          document_id,
+                          user_id,
+                          int(document.get('visibility', 1)))
         if code != 201:
             return message, code
 
@@ -827,22 +837,93 @@ def extract_documents_from_bioc(bioc_text, id_prefix):
     string_doc = StringIO.StringIO(bioc_text.encode('utf-8'))
     bioc_collection = bioc.parse(string_doc)
     documents = []
+    denotations = []
+    relations = []
+    known_types = dict((t['code'], t) for t in load_types())
     for bioc_doc in bioc_collection.documents:
         doc_text = ''
+        count = 0
         for passage in bioc_doc.passages:
             if passage.infons.get('type') != 'title':
                 if len(passage.text) > 0:
                     doc_text += passage.text
+                    prefix = 'p' + str(count)
+                    passage_denotations = extract_denotations_from_bioc_object(passage, known_types, prefix)
+                    denotations_map = dict(map(lambda d: (d['id'][len(prefix):], d['id']), passage_denotations))
+                    passage_relations = extract_relations_from_bioc_object(passage, known_types,
+                                                                           prefix, denotations_map)
+                    denotations.extend(passage_denotations)
+                    relations.extend(passage_relations)
                 else:
                     for sentence in passage:
                         doc_text += sentence.text
+                        prefix = 'p' + str(count)
+                        sentence_denotations = extract_denotations_from_bioc_object(passage, known_types, prefix)
+                        denotations_map = dict(map(lambda d: (d['id'][len(prefix):], d['id']), sentence_denotations))
+                        sentence_relations = extract_relations_from_bioc_object(passage, known_types,
+                                                                                prefix, denotations_map)
+                        denotations.extend(sentence_denotations)
+                        relations.extend(sentence_relations)
         document = {
             'document_id': id_prefix + '__' + bioc_doc.id,
             'text': doc_text,
+            'denotations': denotations,
+            'relations': relations,
         }
         documents.append(document)
     string_doc.close()
     return documents
+
+
+def extract_denotations_from_bioc_object(bioc_object, known_types, id_prefix):
+    denotations = []
+    for annotation in bioc_object.annotations:
+        denotation = {}
+        denotation['id'] = id_prefix + annotation.id
+        denotation['span'] = {}
+        denotation['span']['begin'] = annotation.locations[0].offset
+        denotation['span']['end'] = annotation.locations[0].offset + annotation.locations[0].length
+        annotationInfons = annotation.infons.values()
+        for value in annotationInfons:
+            umls_type = known_types.get(value, None)
+            if umls_type is not None:
+                denotation['obj'] = umls_type
+                break
+        if denotation.get('obj') is None:
+            label_guesses = filter(lambda x: x[0] == 'label' or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
+                                   annotation.infons.iteritems())
+            if len(label_guesses) > 0:
+                denotation['obj'] = {'label': label_guesses[0][1]}
+        denotations.append(denotation)
+
+    return denotations
+
+
+def extract_relations_from_bioc_object(bioc_object, known_types, id_prefix, denotations):
+    relations = []
+    for bRelation in bioc_object.relations:
+        nodes = list(bRelation.nodes)
+        subj_id = denotations.get(nodes[0].refid, None)
+        obj_id = denotations.get(nodes[1].refid, None)
+        if subj_id is not None and obj_id is not None:
+            relation_type = None
+            bRelationInfons = bRelation.infons.values()
+            for value in bRelationInfons:
+                relation_type = known_types.get(value, None)
+                if relation_type is not None:
+                    break
+            relation = {'id': id_prefix + bRelation.id,
+                        'subj': subj_id,
+                        'obj' : obj_id,
+                        'pred': relation_type
+                        }
+            if relation_type is None:
+                label_guesses = filter(lambda x: x[0] == 'label' or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
+                                   bRelation.infons.iteritems())
+                if len(label_guesses) > 0:
+                    relation['pred'] = {'label': label_guesses[0][1]}
+            relations.append(relation)
+    return relations
 
 
 def create_document_in_database(document_id, document_text, document_visibility, task):
@@ -864,14 +945,13 @@ def create_document_in_database(document_id, document_text, document_visibility,
     connection.commit()
 
     cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
-                   (current_user.get_id() + '_' + document_id, current_user.get_id(), document_id,
+                   (create_new_user_doc_id(current_user.get_id(), document_id), current_user.get_id(), document_id,
                     document_visibility, datetime.now(), datetime.now()))
     connection.commit()
     return "Successfully imported", 201
 
 
 def create_bioc_document_from_document_json(document):
-    # TODO: only export annotations of user 0
     bDocument = bioc.BioCDocument()
     bDocument.id = document['sourceid']
     passage = bioc.BioCPassage()
