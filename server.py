@@ -1,11 +1,17 @@
-import json, pyhdb, os, sys
+import json
+import os
+import pyhdb
+import sys
+import time
 
 from flask import Flask, jsonify, Response, request
 from flask.ext.cors import CORS
-from flask_login import LoginManager, login_user, logout_user, current_user, login_required
+from flask_login import LoginManager, login_user, logout_user, current_user
 
 from collections import namedtuple
 from datetime import datetime
+
+from threading import Thread
 
 from user import User
 
@@ -27,11 +33,14 @@ connection = None
 SECRET_KEY = 'development key'
 app.config.from_object(__name__)
 
-context = (SERVER_ROOT + '/certificate.crt',SERVER_ROOT + '/certificate.key')
+context = (SERVER_ROOT + '/certificate.crt', SERVER_ROOT + '/certificate.key')
 
 login_manager = LoginManager()
 login_manager.session_protection = None
 login_manager.init_app(app)
+
+model_training_thread = None
+model_training_queue = set()
 
 PREDICT_ENTITIES = 'entities'
 PREDICT_RELATIONS = 'relations'
@@ -42,6 +51,9 @@ TYPE_BIOC = 'bioc'
 
 def init():
     try_reconnecting()
+    global model_training_thread
+    model_training_thread = Thread(target=call_start_training)
+    model_training_thread.start()
     app.run(host='0.0.0.0', port=8080, debug=True, ssl_context=context)
 
 
@@ -248,7 +260,6 @@ def get_document(document_id):
         successful = False
         try:
             user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-            import pdb; pdb.set_trace()
             successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id(), request.get_json()['task_id'])
         except Exception, e:
             print e
@@ -449,7 +460,7 @@ def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible =
         successful &= save_relations(user_doc_id, data['relations'], id_map)
         if successful:
             print "saved relations successfully"
-            call_start_training(task_id)
+            model_training_queue.add(task_id)
         else:
             print "did not save relations successfully"
     else:
@@ -996,19 +1007,29 @@ def create_bioc_document_from_document_json(document):
     bDocument.add_passage(passage)
     return bDocument
 
-def call_start_training(task_id):
-    sql_to_prepare = 'CALL LTN_DEVELOP.LTN_TRAIN (?)'
-    print(task_id)
-    params = {
-        'TASK_ID': task_id
-    }
-    psid = cursor.prepare(sql_to_prepare)
-    ps = cursor.get_prepared_statement(psid)
-    try:
-        cursor.execute_prepared(ps, [params])
-        connection.commit()
-    except Exception, e:
-        print 'Error: ', e
+
+def call_start_training():
+    while True:
+        try:
+            task_id = model_training_queue.pop()
+        except KeyError:
+            time.sleep(10)
+            continue
+
+        global connection
+        cursor = connection.cursor()
+        sql_to_prepare = 'CALL LTN_DEVELOP.LTN_TRAIN (?)'
+        params = {
+            'TASK_ID': task_id
+        }
+        psid = cursor.prepare(sql_to_prepare)
+        ps = cursor.get_prepared_statement(psid)
+
+        try:
+            cursor.execute_prepared(ps, [params])
+            connection.commit()
+        except Exception, e:
+            print 'Error: ', e
 
 
 def prediction_user_for_user(user_id):
