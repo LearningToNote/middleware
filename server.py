@@ -602,7 +602,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
     colors = ['blue', 'navy', 'brown', 'chocolate', 'orange', 'maroon', 'turquoise']
     user_id_mapping = {current_user.get_id(): 0}
     prediction_engine_info = {'name': 'Prediction Engine', 'color': 'gray'}
-    current_user_info = {'name': 'You', 'color': 'darkgreen'}
+    current_user_info = {'name': 'You', 'color': '#55AA55'}
     user_info = {0: current_user_info}
     annotation_id_map = {}
     user_offset = 1
