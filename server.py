@@ -837,17 +837,18 @@ def extract_documents_from_bioc(bioc_text, id_prefix):
     string_doc = StringIO.StringIO(bioc_text.encode('utf-8'))
     bioc_collection = bioc.parse(string_doc)
     documents = []
-    denotations = []
-    relations = []
     known_types = dict((t['code'], t) for t in load_types())
     for bioc_doc in bioc_collection.documents:
         doc_text = ''
-        count = 0
+        passage_count = 0
+        denotations = []
+        relations = []
         for passage in bioc_doc.passages:
             if passage.infons.get('type') != 'title':
                 if len(passage.text) > 0:
                     doc_text += passage.text
-                    prefix = 'p' + str(count)
+                    prefix = 'p' + str(passage_count)
+                    passage_count += 1
                     passage_denotations = extract_denotations_from_bioc_object(passage, known_types, prefix)
                     denotations_map = dict(map(lambda d: (d['id'][len(prefix):], d['id']), passage_denotations))
                     passage_relations = extract_relations_from_bioc_object(passage, known_types,
@@ -855,9 +856,11 @@ def extract_documents_from_bioc(bioc_text, id_prefix):
                     denotations.extend(passage_denotations)
                     relations.extend(passage_relations)
                 else:
+                    sentence_count = 0
                     for sentence in passage:
                         doc_text += sentence.text
-                        prefix = 'p' + str(count)
+                        prefix = 's' + str(sentence_count)
+                        sentence_count += 1
                         sentence_denotations = extract_denotations_from_bioc_object(passage, known_types, prefix)
                         denotations_map = dict(map(lambda d: (d['id'][len(prefix):], d['id']), sentence_denotations))
                         sentence_relations = extract_relations_from_bioc_object(passage, known_types,
