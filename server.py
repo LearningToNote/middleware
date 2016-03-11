@@ -125,7 +125,7 @@ def get_user(user_id):
 def get_tasks():
     cursor = connection.cursor()
     cursor.execute('SELECT t.id, t.name, t.domain, t.config, t.author, u.name '
-                   'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author')
+                   'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author ORDER BY t.id')
     tasks = list()
     for result in cursor.fetchall():
         tasks.append({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2], 'task_config': result[3],
@@ -346,7 +346,8 @@ def predict_entities(document_id, task_id, target_user_document_id):
     er_index_name = "$TA_ER_INDEX_" + table_name
 
     cursor.execute("""
-        select distinct fti.ta_offset as "start",
+        select distinct
+          fti.ta_offset as "start",
           fti.ta_offset + length(fti.ta_token) as "end",
           fti.ta_token,
           fti.ta_type,
@@ -366,6 +367,7 @@ def predict_entities(document_id, task_id, target_user_document_id):
 
     for row in cursor.fetchall():
         entity_id = target_user_document_id + str(row[0]) + str(row[2]) + str(row[3])
+        entity_id = entity_id.replace(' ', '_').replace('/', '_')
         entities.append((entity_id, target_user_document_id, int(row[4]), None, row[2]))
         offsets.append((row[0], row[1], entity_id, target_user_document_id))
 
