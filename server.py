@@ -196,9 +196,9 @@ def get_document_details(document_id):
                    'FROM LTN_DEVELOP.USER_DOCUMENTS d '
                    'JOIN LTN_DEVELOP.USERS u ON u.id = d.user_id '
                    'LEFT OUTER JOIN LTN_DEVELOP.ENTITIES e ON e.user_doc_id = d.id '
-                   'LEFT OUTER JOIN LTN_DEVELOP.PAIRS p ON p.user_doc_id = d.id '
-                   'WHERE d.document_id = ?'
-                   'GROUP BY d.id', (document_id,))
+                   'LEFT OUTER JOIN LTN_DEVELOP.PAIRS p ON p.user_doc_id = d.id AND p.ddi = 1 '
+                   'WHERE d.document_id = ? AND (d.visibility = 1 OR d.user_id = ?) '
+                   'GROUP BY d.id', (document_id, current_user.get_id()))
     for row in cursor.fetchall():
         user_documents.append({'id': row[0], 'user_id': row[1], 'user_name': row[2],
                                'entities': row[3], 'pairs': row[4]})
