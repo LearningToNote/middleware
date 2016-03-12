@@ -206,17 +206,32 @@ def manage_task(task_id):
 def get_document_details(document_id):
     user_documents = list()
     cursor = connection.cursor()
-    cursor.execute('SELECT d.id, MIN(d.user_id), MIN(u.name), COUNT(DISTINCT e.id), COUNT(distinct p.id) '
+    user_id = current_user.get_id()
+    cursor.execute('SELECT d.id, MIN(d.user_id), MIN(u.name), COUNT(DISTINCT e.id), COUNT(distinct p.id), MIN(d.visibility) '
                    'FROM LTN_DEVELOP.USER_DOCUMENTS d '
                    'JOIN LTN_DEVELOP.USERS u ON u.id = d.user_id '
                    'LEFT OUTER JOIN LTN_DEVELOP.ENTITIES e ON e.user_doc_id = d.id '
                    'LEFT OUTER JOIN LTN_DEVELOP.PAIRS p ON p.user_doc_id = d.id AND p.ddi = 1 '
                    'WHERE d.document_id = ? AND (d.visibility = 1 OR d.user_id = ?) '
-                   'GROUP BY d.id', (document_id, current_user.get_id()))
+                   'GROUP BY d.id', (document_id, user_id))
     for row in cursor.fetchall():
         user_documents.append({'id': row[0], 'user_id': row[1], 'user_name': row[2],
-                               'entities': row[3], 'pairs': row[4]})
+                               'entities': row[3], 'pairs': row[4],
+                               'visible': bool(row[5]), 'from_current_user': row[1] == user_id})
     return respond_with(user_documents)
+
+
+@app.route('/userdoc_visibility/<doc_id>', methods=['POST'])
+def save_userdoc_visibility(doc_id):
+    user_doc_id = load_user_doc_id(doc_id, current_user.get_id())
+    visibility = request.get_json()['visible']
+    cursor = connection.cursor()
+    cursor.execute('UPDATE LTN_DEVELOP.USER_DOCUMENTS '
+                   'SET VISIBILITY = ? WHERE ID = ?',
+                   (visibility, user_doc_id))
+    cursor.close()
+    connection.commit()
+    return "", 200
 
 
 @app.route('/user_documents/<user_id>')
