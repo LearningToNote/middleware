@@ -51,12 +51,14 @@ TYPE_PLAINTEXT = 'plaintext'
 TYPE_BIOC = 'bioc'
 
 
-def init():
-    try_reconnecting()
+def init_training_thread():
     global model_training_thread
     model_training_thread = Thread(target=call_start_training)
     model_training_thread.start()
-    app.run(host='0.0.0.0', port=8080, debug=True, ssl_context=context)
+
+
+def init():
+    try_reconnecting()
 
 
 def reset_connection():
@@ -1029,7 +1031,7 @@ def call_start_training():
     global should_continue_training
     while True:
         if not should_continue_training:
-            return
+            break
         try:
             task_id = model_training_queue.pop()
         except KeyError:
@@ -1050,6 +1052,8 @@ def call_start_training():
             connection.commit()
         except Exception, e:
             print 'Error: ', e
+        finally:
+            cursor.close()
 
 
 def prediction_user_for_user(user_id):
@@ -1067,13 +1071,23 @@ def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
 
 
-def shutdown(signal, frame):
-    print "Shutting down. Please wait..."
+def handle_signal(signal, frame):
+    print "Gracefully sutting down. Please wait..."
     global should_continue_training
-    should_continue_training= False
+    should_continue_training = False
     model_training_thread.join()
+    print "Done. Goodbye."
     sys.exit(0)
 
+
 if __name__ == '__main__':
-    signal.signal(signal.SIGINT, shutdown)
-    init()
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        init()
+    else:
+        # This ensures that we can join the thread on exit
+        # as flask does not wait on exit for its child processes to gracefully quit
+        # unfortunately this means that changes to the code that runs in the
+        # training thread cannot be reloaded with flask
+        signal.signal(signal.SIGINT, handle_signal)
+        init_training_thread()
+    app.run(host='0.0.0.0', port=8080, debug=True, ssl_context=context)
