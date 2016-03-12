@@ -5,7 +5,7 @@ import sys
 import signal
 import time
 
-from flask import Flask, jsonify, Response, request
+from flask import Flask, Response, request, url_for, redirect
 from flask.ext.cors import CORS
 from flask_login import LoginManager, login_user, logout_user, current_user
 
@@ -84,6 +84,11 @@ def try_reconnecting():
         )
     except Exception, e:
         print e
+
+
+@app.route('/')
+def home():
+    return redirect(url_for('static', filename='index.html'))
 
 
 @login_manager.user_loader
@@ -1072,7 +1077,7 @@ def respond_with(response):
 
 
 def handle_signal(signal, frame):
-    print "Gracefully sutting down. Please wait..."
+    print "Gracefully shutting down. Please wait..."
     global should_continue_training
     should_continue_training = False
     model_training_thread.join()
