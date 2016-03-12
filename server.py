@@ -2,6 +2,7 @@ import json
 import os
 import pyhdb
 import sys
+import signal
 import time
 
 from flask import Flask, jsonify, Response, request
@@ -41,6 +42,7 @@ login_manager.init_app(app)
 
 model_training_thread = None
 model_training_queue = set()
+should_continue_training = True
 
 PREDICT_ENTITIES = 'entities'
 PREDICT_RELATIONS = 'relations'
@@ -1009,7 +1011,10 @@ def create_bioc_document_from_document_json(document):
 
 
 def call_start_training():
+    global should_continue_training
     while True:
+        if not should_continue_training:
+            return
         try:
             task_id = model_training_queue.pop()
         except KeyError:
@@ -1047,5 +1052,13 @@ def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
 
 
+def shutdown(signal, frame):
+    print "Shutting down. Please wait..."
+    global should_continue_training
+    should_continue_training= False
+    model_training_thread.join()
+    sys.exit(0)
+
 if __name__ == '__main__':
+    signal.signal(signal.SIGINT, shutdown)
     init()
