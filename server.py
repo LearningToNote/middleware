@@ -308,13 +308,14 @@ def get_document(document_id):
 @app.route('/export/<document_id>', methods=['GET'])
 def export(document_id):
     document = load_document(document_id, current_user.get_id())
-    bCollection = bioc.BioCCollection()
-    bDocument = create_bioc_document_from_document_json(document)
-    bCollection.add_document(bDocument)
-    result = bCollection.tobioc()
+    bcollection = bioc.BioCCollection()
+    bdocument = create_bioc_document_from_document_json(document)
+    bcollection.add_document(bdocument)
+    result = bcollection.tobioc()
     response = Response(result, mimetype='text/xml')
     response.headers["Content-Disposition"] = "attachment; filename=" + document_id + ".xml"
     return response
+
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -466,7 +467,7 @@ def load_type_id(code):
     return None
 
 
-def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible = True):
+def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
     annotations = data['denotations']
     successful = True
     create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible)
@@ -484,6 +485,7 @@ def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible =
         successful &= save_relations(user_doc_id, data['relations'], id_map)
         if successful:
             print "saved relations successfully"
+            global model_training_queue
             model_training_queue.add(task_id)
         else:
             print "did not save relations successfully"
@@ -1038,6 +1040,7 @@ def call_start_training():
         if not should_continue_training:
             break
         try:
+            global model_training_queue
             task_id = model_training_queue.pop()
         except KeyError:
             time.sleep(10)
@@ -1086,6 +1089,9 @@ def handle_signal(signal, frame):
 
 
 if __name__ == '__main__':
+    debug = True
+    if len(sys.argv) >= 3:
+        debug = sys.argv[2] in ['true', 'True', '1', 'y', 'yes']
     if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         init()
     else:
@@ -1095,4 +1101,4 @@ if __name__ == '__main__':
         # training thread cannot be reloaded with flask
         signal.signal(signal.SIGINT, handle_signal)
         init_training_thread()
-    app.run(host='0.0.0.0', port=8080, debug=True, ssl_context=context)
+    app.run(host='0.0.0.0', port=8080, debug=debug, ssl_context=context)
