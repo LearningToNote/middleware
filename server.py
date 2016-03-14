@@ -387,13 +387,12 @@ def predict_entities(document_id, task_id, target_user_document_id):
           fti.ta_offset as "start",
           fti.ta_offset + length(fti.ta_token) as "end",
           fti.ta_token,
-          fti.ta_type,
+          t.code,
           t.id
         from "LTN_DEVELOP"."%s" fti
-        join "LTN_DEVELOP"."TYPES" t on t.code = fti.ta_type
+        join "LTN_DEVELOP"."TYPES" t on (t.code = fti.ta_type or (t.code = 'T092' and fti.ta_type like 'ORGANIZATION%%'))
         join "LTN_DEVELOP"."%s" pos on fti.document_id = pos.document_id and fti.ta_offset = pos.ta_offset
         where fti.document_id = ?
-          and fti.ta_type like 'T___'
           and length(fti.ta_token) >= 3
           and pos.ta_type in ('noun', 'abbreviation', 'proper name')
         order by fti.ta_offset
