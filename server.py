@@ -4,6 +4,7 @@ import pyhdb
 import sys
 import signal
 import time
+import random
 
 from flask import Flask, Response, request, url_for, redirect
 from flask.ext.cors import CORS
@@ -188,6 +189,12 @@ def manage_task(task_id):
             'ER_ANALYSIS_CONFIG': req.get('task_config'),
             'NEW_AUTHOR': req.get('user_id')
         }
+
+        if params.get('TABLE_NAME', None) is None:
+            generate_table_name(params)
+        if params.get('NEW_AUTHOR', None) is None:
+            params['NEW_AUTHOR'] = current_user.get_id()
+
         psid = cursor.prepare(sql_to_prepare)
         ps = cursor.get_prepared_statement(psid)
         try:
@@ -207,6 +214,10 @@ def manage_task(task_id):
         except:
             pass  # Rows affected warning
         return 'OK', 200
+
+
+def generate_table_name(task):
+    task['TABLE_NAME'] = task['TASK_NAME'].replace(' ', '')[:10] + str(random.getrandbits(42))
 
 
 @app.route('/user_documents_for/<document_id>')
@@ -360,6 +371,7 @@ def predict():
 
 def remove_entities_without_relations(pairs, document_data, user_doc_id, doc_id, user):
     used_entities = set()
+
     def add_entities_to_set(pair_tuple):
         used_entities.add(pair_tuple[0])
         used_entities.add(pair_tuple[1])
