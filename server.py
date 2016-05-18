@@ -909,7 +909,11 @@ def extract_documents_from_bioc(bioc_text, id_prefix):
                     relations.extend(passage_relations)
                 else:
                     sentence_count = 0
-                    for sentence in passage:
+                    if passage.sentences is not None:
+                        sentences = passage.sentences
+                    else:
+                        sentences = passage
+                    for sentence in sentences:
                         doc_text += sentence.text
                         prefix = 's' + str(sentence_count)
                         sentence_count += 1
