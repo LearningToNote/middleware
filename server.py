@@ -456,6 +456,36 @@ def store_predicted_relations(pairs, user_document_id):
     return tuples
 
 
+def get_types(document_id, relation):
+    cursor = connection.cursor()
+    relation_flag = int(relation)
+    cursor.execute('''SELECT * FROM (
+                        SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL"
+                          FROM LTN_DEVELOP.TYPES t
+                          JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID
+                          JOIN LTN_DEVELOP.DOCUMENTS d ON tt.TASK_ID = d.TASK
+                          WHERE d.id = ? AND tt.RELATION = ?
+                      UNION
+                        SELECT CODE, NAME, GROUP_ID, "GROUP", NULL AS "LABEL"
+                          FROM LTN_DEVELOP.TYPES t
+                          LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID
+                          LEFT OUTER JOIN LTN_DEVELOP.DOCUMENTS d ON tt.TASK_ID = d.TASK
+                          WHERE d.id = ? AND tt.ID IS NULL OR d.ID IS NULL
+                      ) ORDER BY "GROUP" DESC''', (document_id, relation_flag, document_id))
+    types = list()
+    for row in cursor.fetchall():
+        types.append({"code": row[0], "name": row[1], "groupId": row[2], "group": row[3], "label": row[4]})
+    return types
+
+
+def get_entity_types(document_id):
+    return get_types(document_id, relation=False)
+
+
+def get_relation_types(document_id):
+    return get_types(document_id, relation=True)
+
+
 def load_types():
     cursor = connection.cursor()
     cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP" FROM LTN_DEVELOP.TYPES ORDER BY "GROUP" DESC')
@@ -604,14 +634,13 @@ def load_document(document_id, user_id, show_predictions=False):
     cursor = connection.cursor()
     result = {}
     print "Loading information for document_id: " + str(document_id) + " and user: " + str(current_user.get_id())
-    default_types = load_types()
     result['text'] = get_text(cursor, document_id)
     denotations, users, annotation_id_map = get_denotations_and_users(cursor, document_id, user_id, show_predictions)
     result['denotations'] = denotations
     result['relations'] = get_relations(cursor, document_id, user_id, annotation_id_map, show_predictions)
     result['sourceid'] = document_id
-    result['config'] = {'entity types':   default_types,
-                        'relation types': default_types,
+    result['config'] = {'entity types':   get_entity_types(document_id),
+                        'relation types': get_relation_types(document_id),
                         'users': users}
     cursor.close()
     return result
