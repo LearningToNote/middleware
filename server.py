@@ -220,6 +220,16 @@ def generate_table_name(task):
     task['TABLE_NAME'] = task['TASK_NAME'].replace(' ', '')[:10] + str(random.getrandbits(42))
 
 
+@app.route('/tasks/<task_id>/entity_types')
+def get_task_entity_types(task_id):
+    return respond_with(get_task_types(task_id, relation=False))
+
+
+@app.route('/tasks/<task_id>/relation_types')
+def get_task_relation_types(task_id):
+    return respond_with(get_task_types(task_id, relation=True))
+
+
 @app.route('/user_documents_for/<document_id>')
 def get_document_details(document_id):
     user_documents = list()
@@ -484,6 +494,20 @@ def get_entity_types(document_id):
 
 def get_relation_types(document_id):
     return get_types(document_id, relation=True)
+
+
+def get_task_types(task_id, relation):
+    cursor = connection.cursor()
+    relation_flag = int(relation)
+    cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL" '
+                   'FROM LTN_DEVELOP.TYPES t '
+                   'JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID '
+                   'WHERE tt.TASK_ID = ? AND tt.RELATION = ? '
+                   'ORDER BY "GROUP" DESC', (task_id, relation_flag))
+    types = list()
+    for row in cursor.fetchall():
+        types.append({"code": row[0], "name": row[1], "groupId": row[2], "group": row[3], "label": row[4]})
+    return types
 
 
 def load_types():
