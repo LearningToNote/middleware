@@ -476,7 +476,7 @@ def get_types(document_id, relation):
                           JOIN LTN_DEVELOP.DOCUMENTS d ON tt.TASK_ID = d.TASK
                           WHERE d.id = ? AND tt.RELATION = ?
                       UNION
-                        SELECT CODE, NAME, GROUP_ID, "GROUP", NULL AS "LABEL", t.ID
+                        SELECT CODE, NAME, GROUP_ID, "GROUP", NULL AS "LABEL", t.ID, tt.ID
                           FROM LTN_DEVELOP.TYPES t
                           LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID
                           LEFT OUTER JOIN LTN_DEVELOP.DOCUMENTS d ON tt.TASK_ID = d.TASK
