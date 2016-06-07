@@ -801,7 +801,7 @@ def get_relations(cursor, document_id, user_id, annotation_id_map, show_predicti
                     document_id, user_id, current_prediction_user))
     relations = []
     for result in cursor.fetchall():
-        type_info = {"id": result[8],
+        type_info = {"id": result[9],
                      "code": str(result[4]),
                      "name": str(result[5]),
                      "groupId": str(result[6]),
