@@ -469,22 +469,15 @@ def store_predicted_relations(pairs, user_document_id):
 def get_types(document_id, relation):
     cursor = connection.cursor()
     relation_flag = int(relation)
-    cursor.execute('''SELECT * FROM (
-                        SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID
-                          FROM LTN_DEVELOP.TYPES t
-                          JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID
-                          JOIN LTN_DEVELOP.DOCUMENTS d ON tt.TASK_ID = d.TASK
-                          WHERE d.id = ? AND tt.RELATION = ?
-                      UNION
-                        SELECT CODE, NAME, GROUP_ID, "GROUP", NULL AS "LABEL", t.ID, tt.ID
-                          FROM LTN_DEVELOP.TYPES t
-                          LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID
-                          LEFT OUTER JOIN LTN_DEVELOP.DOCUMENTS d ON tt.TASK_ID = d.TASK
-                          WHERE d.id = ? AND tt.ID IS NULL OR d.ID IS NULL
-                      ) ORDER BY "GROUP" DESC''', (document_id, relation_flag, document_id))
+    cursor.execute('''SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID
+                      FROM LTN_DEVELOP.TYPES t
+                      JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID
+                      JOIN LTN_DEVELOP.DOCUMENTS d ON tt.TASK_ID = d.TASK
+                      WHERE d.id = ? AND tt.RELATION = ?
+                      ORDER BY "GROUP" DESC''', (document_id, relation_flag))
     types = list()
     for row in cursor.fetchall():
-        types.append({"code": row[0], "name": row[1], "groupId": row[2], "group": row[3],
+        types.append({"code": row[0], "name": "%s (%s)" % (row[4], row[1]), "groupId": row[2], "group": row[3],
                       "label": row[4], "type_id": row[5], "id": row[6]})
     return types
 
