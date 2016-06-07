@@ -623,32 +623,31 @@ def delete_annotation_data(user_doc_id):
     connection.commit()
 
 
+def convert_annotation(annotation, user_doc_id):
+    return (annotation.get('originalId',
+            annotation['id']),
+            user_doc_id,
+            annotation['obj'].get('id'),
+            annotation['obj'].get('label', None))
+
+
+def convert_offset(annotation, user_doc_id):
+    return (annotation['span']['begin'], annotation['span']['end'],
+            annotation.get('originalId', annotation['id']), user_doc_id)
+
+
 def save_annotations(user_doc_id, annotations):
     # only save annotations from the current user, defined as userId 0 at loading time
     filtered_annotations = filter(lambda annotation: annotation.get('userId', 0) == 0, annotations)
-    cursor = connection.cursor()
     if not user_doc_id:
         return False
-    print "loading type ids...."
-    type_id_dict = {}
-    types = set(map(lambda annotation: annotation['obj'].get('code'), filtered_annotations))
-    for current_type in types:
-        type_id = load_type_id(current_type)
-        if type_id is not None:
-            type_id_dict[current_type] = str(type_id)
     print "inserting new annotations..."
-    annotation_tuples = map(lambda annotation: (annotation.get('originalId',
-                                                annotation['id']),
-                                                user_doc_id,
-                                                type_id_dict.get(annotation['obj'].get('code'), None),
-                                                annotation['obj'].get('label', None)),
-                            filtered_annotations)
+    annotation_tuples = map(lambda annotation: convert_annotation(annotation, user_doc_id), filtered_annotations)
+    cursor = connection.cursor()
     cursor.executemany("INSERT INTO LTN_DEVELOP.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) "
                        "VALUES (?, ?, ?, ?)", annotation_tuples)
     print "inserting new offsets..."
-    offset_tuples = map(lambda annotation: (annotation['span']['begin'], annotation['span']['end'],
-                                            annotation.get('originalId', annotation['id']), user_doc_id),
-                        filtered_annotations)
+    offset_tuples = map(lambda annotation: convert_offset(annotation, user_doc_id), filtered_annotations)
     cursor.executemany("INSERT INTO LTN_DEVELOP.OFFSETS VALUES (?, ?, ?, ?)", offset_tuples)
     connection.commit()
     return True
