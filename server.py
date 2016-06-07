@@ -731,7 +731,7 @@ def get_text(cursor, document_id):
 def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
     current_prediction_user = get_current_prediction_user(user_id, show_predictions)
     cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, TT."LABEL", T.GROUP_ID, '
-                   'T."GROUP", E."LABEL", U."NAME" '
+                   'T."GROUP", E."LABEL", U."NAME", TT.ID '
                    'FROM LTN_DEVELOP.ENTITIES E '
                    'JOIN LTN_DEVELOP.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ? '
                    'JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID '
@@ -776,7 +776,8 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
                      "name": str(result[5]),
                      "groupId": str(result[6]),
                      "group": str(result[7]),
-                     "label": str(result[8])}
+                     "label": str(result[8]),
+                     "id": result[10]}
         denotation['id'] = current_id
         denotation['obj'] = anno_info
         denotation['span'] = {}
@@ -792,9 +793,11 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
 
 def get_relations(cursor, document_id, user_id, annotation_id_map, show_predictions):
     current_prediction_user = get_current_prediction_user(user_id, show_predictions)
-    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", T.GROUP_ID, T."GROUP", UD1.USER_ID '
+    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", '
+                   'T.GROUP_ID, T."GROUP", UD1.USER_ID, TT.ID '
                    'FROM LTN_DEVELOP.PAIRS P '
-                   'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON P.TYPE_ID = T.ID '
+                   'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON P.TYPE_ID = TT.ID '
+                   'JOIN LTN_DEVELOP.TYPES T ON TT.TYPE_ID = T.ID '
                    'JOIN LTN_DEVELOP.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1 AND P.USER_DOC_ID = E1.USER_DOC_ID '
                    'JOIN LTN_DEVELOP.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1 AND P.USER_DOC_ID = E2.USER_DOC_ID '
                    'JOIN LTN_DEVELOP.USER_DOCUMENTS UD1 ON E1.USER_DOC_ID = UD1.ID AND UD1.DOCUMENT_ID = ? '
@@ -805,7 +808,8 @@ def get_relations(cursor, document_id, user_id, annotation_id_map, show_predicti
                     document_id, user_id, current_prediction_user))
     relations = []
     for result in cursor.fetchall():
-        type_info = {"code":    str(result[4]),
+        type_info = {"id":      result[8],
+                     "code":    str(result[4]),
                      "name":    str(result[5]),
                      "groupId": str(result[6]),
                      "group":   str(result[7]),
