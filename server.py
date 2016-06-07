@@ -654,24 +654,16 @@ def save_annotations(user_doc_id, annotations):
 
 
 def save_relations(user_doc_id, relations, id_map):
-    cursor = connection.cursor()
-    print "loading type ids...."
-    type_id_dict = {}
-    types = set(map(lambda relation: relation['pred'].get('code'), relations))
-    for current_type in types:
-        type_id = load_type_id(current_type)
-        if type_id is not None:
-            type_id_dict[current_type] = str(type_id)
-
-    relation_tuples = []
+    relation_tuples = list()
     for relation in relations:
         if id_map.get(relation['subj']) is not None and id_map.get(relation['obj']) is not None:
             relation_tuples.append((id_map[relation['subj']],
-                                        id_map[relation['obj']],
-                                        user_doc_id, 1,
-                                        type_id_dict.get(relation['pred'].get('code'), None),
-                                        relation['pred'].get('label', None)))
+                                    id_map[relation['obj']],
+                                    user_doc_id, 1,
+                                    relation['pred'].get('id'),
+                                    relation['pred'].get('label', None)))
 
+    cursor = connection.cursor()
     cursor.executemany("INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) "
                        "VALUES (?, ?, ?, ?, ?, ?)", relation_tuples)
     connection.commit()
