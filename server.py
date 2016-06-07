@@ -161,7 +161,7 @@ def manage_task(task_id):
     if request.method == 'GET':
         cursor.execute('SELECT t.id, t.name, t.domain, t.author, u.name '
                        'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author '
-                       'WHERE t.id = ?', (task_id, ))
+                       'WHERE t.id = ?', (task_id,))
         result = cursor.fetchone()
         cursor.execute('SELECT d.id, count(ud.id) '
                        'FROM LTN_DEVELOP.TASKS t '
@@ -235,13 +235,14 @@ def get_document_details(document_id):
     user_documents = list()
     cursor = connection.cursor()
     user_id = current_user.get_id()
-    cursor.execute('SELECT d.id, MIN(d.user_id), MIN(u.name), COUNT(DISTINCT e.id), COUNT(distinct p.id), MIN(d.visibility) '
-                   'FROM LTN_DEVELOP.USER_DOCUMENTS d '
-                   'JOIN LTN_DEVELOP.USERS u ON u.id = d.user_id '
-                   'LEFT OUTER JOIN LTN_DEVELOP.ENTITIES e ON e.user_doc_id = d.id '
-                   'LEFT OUTER JOIN LTN_DEVELOP.PAIRS p ON p.user_doc_id = d.id AND p.ddi = 1 '
-                   'WHERE d.document_id = ? AND (d.visibility = 1 OR d.user_id = ?) '
-                   'GROUP BY d.id', (document_id, user_id))
+    cursor.execute(
+        'SELECT d.id, MIN(d.user_id), MIN(u.name), COUNT(DISTINCT e.id), COUNT(distinct p.id), MIN(d.visibility) '
+        'FROM LTN_DEVELOP.USER_DOCUMENTS d '
+        'JOIN LTN_DEVELOP.USERS u ON u.id = d.user_id '
+        'LEFT OUTER JOIN LTN_DEVELOP.ENTITIES e ON e.user_doc_id = d.id '
+        'LEFT OUTER JOIN LTN_DEVELOP.PAIRS p ON p.user_doc_id = d.id AND p.ddi = 1 '
+        'WHERE d.document_id = ? AND (d.visibility = 1 OR d.user_id = ?) '
+        'GROUP BY d.id', (document_id, user_id))
     for row in cursor.fetchall():
         user_documents.append({'id': row[0], 'user_id': row[1], 'user_name': row[2],
                                'entities': row[3], 'pairs': row[4],
@@ -305,7 +306,8 @@ def get_document(document_id):
         successful = False
         try:
             user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-            successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id(), request.get_json()['task_id'])
+            successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id(),
+                                       request.get_json()['task_id'])
         except Exception, e:
             print e
             reset_connection()
@@ -372,14 +374,13 @@ def predict():
             save_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, task_id, False)
         predicted_pairs = predict_relations(prediction_user_doc_id, task_id)
         if PREDICT_ENTITIES not in jobs:
-            remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc_id,
-                                              document_id, current_prediction_user)
+            remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc_id)
 
     document_data = load_document(document_id, current_user.get_id(), True)
     return respond_with(document_data)
 
 
-def remove_entities_without_relations(pairs, document_data, user_doc_id, doc_id, user):
+def remove_entities_without_relations(pairs, document_data, user_doc_id):
     used_entities = set()
 
     def add_entities_to_set(pair_tuple):
@@ -399,7 +400,7 @@ def remove_entities_without_relations(pairs, document_data, user_doc_id, doc_id,
 def predict_entities(document_id, task_id, target_user_document_id):
     cursor = connection.cursor()
 
-    cursor.execute('select "DOMAIN" from LTN_DEVELOP.tasks WHERE id = ?', (task_id, ))
+    cursor.execute('select "DOMAIN" from LTN_DEVELOP.tasks WHERE id = ?', (task_id,))
     table_name = cursor.fetchone()[0]
     index_name = "$TA_INDEX_" + table_name
     er_index_name = "$TA_ER_INDEX_" + table_name
@@ -412,7 +413,8 @@ def predict_entities(document_id, task_id, target_user_document_id):
           t.code,
           t.id
         from "LTN_DEVELOP"."%s" fti
-        join "LTN_DEVELOP"."TYPES" t on (t.code = fti.ta_type or (t.code = 'T092' and fti.ta_type like 'ORGANIZATION%%'))
+        join "LTN_DEVELOP"."TYPES" t on (t.code = fti.ta_type or
+          (t.code = 'T092' and fti.ta_type like 'ORGANIZATION%%'))
         join "LTN_DEVELOP"."%s" pos on fti.document_id = pos.document_id and fti.ta_offset = pos.ta_offset
         where fti.document_id = ?
           and length(fti.ta_token) >= 3
@@ -531,7 +533,7 @@ def manage_task_type(type_id):
         cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID '
                        'FROM LTN_DEVELOP.TYPES t '
                        'JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID '
-                       'WHERE tt.ID = ?', (type_id, ))
+                       'WHERE tt.ID = ?', (type_id,))
         row = cursor.fetchone()
         if row:
             return respond_with({"code": row[0], "name": row[1], "groupId": row[2], "group": row[3],
@@ -557,7 +559,7 @@ def manage_task_type(type_id):
             connection.commit()
             return 'CREATED', 200
     elif request.method == 'DELETE':
-        cursor.execute('DELETE FROM LTN_DEVELOP.TASK_TYPES WHERE ID = ?', (type_id, ))
+        cursor.execute('DELETE FROM LTN_DEVELOP.TASK_TYPES WHERE ID = ?', (type_id,))
         connection.commit()
         return 'DELETED', 200
 
@@ -598,14 +600,14 @@ def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible=T
     return successful
 
 
-def create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible = True):
+def create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible=True):
     cursor = connection.cursor()
     cursor.execute("SELECT 1 FROM LTN_DEVELOP.USER_DOCUMENTS WHERE ID = ?", (user_doc_id,))
     result = cursor.fetchone()
     if not result:
         date = datetime.now()
         cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
-            (user_doc_id, user_id, document_id, int(is_visible), date, date))
+                       (user_doc_id, user_id, document_id, int(is_visible), date, date))
         connection.commit()
 
 
@@ -625,7 +627,7 @@ def delete_annotation_data(user_doc_id):
 
 def convert_annotation(annotation, user_doc_id):
     return (annotation.get('originalId',
-            annotation['id']),
+                           annotation['id']),
             user_doc_id,
             annotation['obj'].get('id'),
             annotation['obj'].get('label', None))
@@ -693,7 +695,7 @@ def load_document(document_id, user_id, show_predictions=False):
     result['denotations'] = denotations
     result['relations'] = get_relations(cursor, document_id, user_id, annotation_id_map, show_predictions)
     result['sourceid'] = document_id
-    result['config'] = {'entity types':   get_entity_types(document_id),
+    result['config'] = {'entity types': get_entity_types(document_id),
                         'relation types': get_relation_types(document_id),
                         'users': users}
     cursor.close()
@@ -753,12 +755,12 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
         if current_id == previous_id:
             current_id += "_" + str(increment)
             increment += 1
-            if not previous_id in annotation_id_map:
+            if previous_id not in annotation_id_map:
                 annotation_id_map[previous_id] = {}
             annotation_id_map[previous_id][creator] = current_id
         else:
             increment = 1
-        if not creator in user_id_mapping and creator != current_prediction_user:
+        if creator not in user_id_mapping and creator != current_prediction_user:
             new_id = len(user_id_mapping)
             user_info[new_id] = {'name': str(result[9]), 'color': colors[(new_id - user_offset) % len(colors)]}
             user_id_mapping[creator] = new_id
@@ -799,12 +801,12 @@ def get_relations(cursor, document_id, user_id, annotation_id_map, show_predicti
                     document_id, user_id, current_prediction_user))
     relations = []
     for result in cursor.fetchall():
-        type_info = {"id":      result[8],
-                     "code":    str(result[4]),
-                     "name":    str(result[5]),
+        type_info = {"id": result[8],
+                     "code": str(result[4]),
+                     "name": str(result[5]),
                      "groupId": str(result[6]),
-                     "group":   str(result[7]),
-                     "label":   str(result[3])}
+                     "group": str(result[7]),
+                     "label": str(result[3])}
         relation = {}
         subj = str(result[1])
         obj = str(result[2])
@@ -1025,20 +1027,19 @@ def extract_documents_from_bioc(bioc_text, id_prefix):
 def extract_denotations_from_bioc_object(bioc_object, known_types, id_prefix):
     denotations = []
     for annotation in bioc_object.annotations:
-        denotation = {}
-        denotation['id'] = id_prefix + annotation.id
-        denotation['span'] = {}
+        denotation = {'id': id_prefix + annotation.id, 'span': {}}
         denotation['span']['begin'] = annotation.locations[0].offset
         denotation['span']['end'] = annotation.locations[0].offset + annotation.locations[0].length
-        annotationInfons = annotation.infons.values()
-        for value in annotationInfons:
+        annotation_info = annotation.infons.values()
+        for value in annotation_info:
             umls_type = known_types.get(value, None)
             if umls_type is not None:
                 denotation['obj'] = umls_type
                 break
         if denotation.get('obj') is None:
-            label_guesses = filter(lambda x: x[0] == 'label' or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
-                                   annotation.infons.iteritems())
+            label_guesses = filter(
+                lambda x: x[0] == 'label' or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
+                annotation.infons.iteritems())
             if len(label_guesses) > 0:
                 denotation['obj'] = {'label': label_guesses[0][1]}
         denotations.append(denotation)
@@ -1061,12 +1062,13 @@ def extract_relations_from_bioc_object(bioc_object, known_types, id_prefix, deno
                     break
             relation = {'id': id_prefix + bRelation.id,
                         'subj': subj_id,
-                        'obj' : obj_id,
+                        'obj': obj_id,
                         'pred': relation_type
                         }
             if relation_type is None:
-                label_guesses = filter(lambda x: x[0] == 'label' or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
-                                   bRelation.infons.iteritems())
+                label_guesses = filter(
+                    lambda x: x[0] == 'label' or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
+                    bRelation.infons.iteritems())
                 if len(label_guesses) > 0:
                     relation['pred'] = {'label': label_guesses[0][1]}
             relations.append(relation)
@@ -1099,8 +1101,8 @@ def create_document_in_database(document_id, document_text, document_visibility,
 
 
 def create_bioc_document_from_document_json(document):
-    bDocument = bioc.BioCDocument()
-    bDocument.id = document['sourceid']
+    b_document = bioc.BioCDocument()
+    b_document.id = document['sourceid']
     passage = bioc.BioCPassage()
     passage.text = document['text']
     passage.offset = 0
@@ -1123,18 +1125,18 @@ def create_bioc_document_from_document_json(document):
         obj_from_current_user = annotation_user_map[relation['obj']] == 0
         if not (subj_from_current_user and obj_from_current_user):
             continue
-        bRelation = bioc.BioCRelation()
-        bRelation.id = relation['id']
-        startNode = bioc.BioCNode('', '')
-        endNode = bioc.BioCNode('', '')
-        startNode.refid = relation['subj']
-        endNode.refid = relation['obj']
-        bRelation.add_node(startNode)
-        bRelation.add_node(endNode)
-        bRelation.infons = relation['pred']
-        passage.add_relation(bRelation)
-    bDocument.add_passage(passage)
-    return bDocument
+        b_relation = bioc.BioCRelation()
+        b_relation.id = relation['id']
+        start_node = bioc.BioCNode('', '')
+        end_node = bioc.BioCNode('', '')
+        start_node.refid = relation['subj']
+        end_node.refid = relation['obj']
+        b_relation.add_node(start_node)
+        b_relation.add_node(end_node)
+        b_relation.infons = relation['pred']
+        passage.add_relation(b_relation)
+    b_document.add_passage(passage)
+    return b_document
 
 
 def call_start_training():
@@ -1182,7 +1184,7 @@ def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
 
 
-def handle_signal(signal, frame):
+def handle_signal(the_signal, frame):
     print "Gracefully shutting down. Please wait..."
     global should_continue_training
     should_continue_training = False
