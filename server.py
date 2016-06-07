@@ -730,13 +730,14 @@ def get_text(cursor, document_id):
 
 def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
     current_prediction_user = get_current_prediction_user(user_id, show_predictions)
-    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, T."NAME", T.GROUP_ID, '
+    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, TT."LABEL", T.GROUP_ID, '
                    'T."GROUP", E."LABEL", U."NAME" '
                    'FROM LTN_DEVELOP.ENTITIES E '
                    'JOIN LTN_DEVELOP.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ? '
                    'JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID '
                    'LEFT OUTER JOIN LTN_DEVELOP.USERS U ON UD.USER_ID = U.ID '
-                   'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON E.TYPE_ID = T.ID '
+                   'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON E.TYPE_ID = TT.ID '
+                   'JOIN LTN_DEVELOP.TYPES T ON TT.TYPE_ID = T.ID '
                    'WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ? OR UD.USER_ID = ? '
                    'ORDER BY E.ID', (document_id, user_id, current_prediction_user))
     denotations = []
