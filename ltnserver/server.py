@@ -4,22 +4,16 @@ import bioc
 import StringIO
 
 from flask import Response, request, url_for, redirect
-from flask_login import LoginManager, login_user, logout_user, current_user
+from flask_login import current_user
 
 from collections import namedtuple
 from datetime import datetime
 
-from user import User
-
-from ltnserver import app, try_reconnecting, reset_connection, get_connection
+from ltnserver import app, try_reconnecting, reset_connection, get_connection, respond_with
 from ltnserver.training import model_training_queue
 
 
 Entity = namedtuple('Entity', ['id', 'user_doc_id', 'type', 'start', 'end'])
-
-login_manager = LoginManager()
-login_manager.session_protection = None
-login_manager.init_app(app)
 
 PREDICT_ENTITIES = 'entities'
 PREDICT_RELATIONS = 'relations'
@@ -31,57 +25,6 @@ TYPE_BIOC = 'bioc'
 @app.route('/')
 def home():
     return redirect(url_for('static', filename='index.html'))
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.get(user_id, get_connection().cursor())
-
-
-@app.route('/login', methods=['POST'])
-def login():
-    if get_connection() is None:
-        try_reconnecting()
-    req = request.get_json()
-    if req and 'username' in req and 'password' in req:
-        try:
-            user = load_user(req['username'])
-            if user and req['password'] == user.token:
-                login_user(user, remember=True)
-                user.token = None
-                return respond_with(user.__dict__)
-        except Exception, e:
-            reset_connection()
-            return str(e) + " Please try again later.", 500
-    return "Not authorized", 401
-
-
-@app.route('/logout', methods=['GET', 'POST'])
-def logout():
-    logout_user()
-    return "", 200
-
-
-@app.route('/current_user')
-def get_current_user():
-    return respond_with(current_user.__dict__)
-
-
-@app.route('/users')
-def get_users():
-    cursor = get_connection().cursor()
-    users = User.all(cursor)
-    cursor.close()
-    return respond_with(map(lambda user: user.__dict__, users))
-
-
-@app.route('/users/<user_id>')
-def get_user(user_id):
-    user = load_user(user_id)
-    if not user:
-        return "User not found", 404
-    user.token = None
-    return respond_with(user.__dict__)
 
 
 @app.route('/tasks')
@@ -1088,7 +1031,3 @@ def get_current_prediction_user(user_id, show_predictions):
         return prediction_user_for_user(user_id)
     else:
         return user_id
-
-
-def respond_with(response):
-    return Response(json.dumps(response), mimetype='application/json')

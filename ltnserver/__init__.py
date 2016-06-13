@@ -1,8 +1,9 @@
 import sys
 import pyhdb
+import json
 
 from signal import signal, SIGINT
-from flask import Flask
+from flask import Flask, Response
 from flask.ext.cors import CORS
 
 from settings import get_settings, get_root_path
@@ -69,5 +70,10 @@ def handle_signal(s, _):
     sys.exit(0)
 
 
-import ltnserver.server
-import ltnserver.training
+def respond_with(response):
+    return Response(json.dumps(response), mimetype='application/json')
+
+
+import server
+import training
+import user
