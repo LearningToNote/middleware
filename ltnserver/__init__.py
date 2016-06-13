@@ -1,27 +1,22 @@
-import os
 import sys
-import json
 import pyhdb
 
 from signal import signal, SIGINT
 from flask import Flask
 from flask.ext.cors import CORS
 
+from settings import get_settings, get_root_path
+
 
 static_folder = "static"
 if len(sys.argv) >= 2:
     static_folder = sys.argv[1]
 
-SERVER_ROOT = os.path.dirname(os.path.realpath(__file__))
-
-def get_root_path(path):
-    return SERVER_ROOT + '/../' + path
-
 app = Flask(__name__, static_folder=static_folder)
 CORS(app, supports_credentials=True)
 
 
-SECRET_KEY = 'development key'
+SECRET_KEY = get_settings('secrets').get('development_key')
 app.config.from_object(__name__)
 
 context = (get_root_path('certificate.crt'), get_root_path('certificate.key'))
@@ -66,17 +61,12 @@ def try_reconnecting():
         print e
 
 
-def handle_signal(the_signal, frame):
+def handle_signal(s, _):
     print 'Gracefully shutting down. Please wait...'
     training.should_continue = False
     training.model_thread.join()
     print 'Done. Goodbye.'
     sys.exit(0)
-
-
-def get_settings(key):
-    with open(get_root_path('secrets.json')) as f:
-        return json.load(f).get(key)
 
 
 import ltnserver.server
