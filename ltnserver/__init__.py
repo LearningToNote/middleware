@@ -77,10 +77,10 @@ def home():
     return redirect(url_for('static', filename='index.html'))
 
 
-import server
-import training
 import user
 import types
 import tasks
-import prediction
+import documents
 import formats
+import training
+import prediction

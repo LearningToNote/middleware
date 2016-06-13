@@ -10,7 +10,7 @@ from metapub import PubMedFetcher
 from metapub.exceptions import InvalidPMID
 
 from ltnserver import app, get_connection, respond_with
-from ltnserver.server import create_new_user_doc_id, save_document, load_user_doc_id, load_document
+from ltnserver.documents import create_new_user_doc_id, save_document, load_user_doc_id, load_document
 from ltnserver.types import get_base_types
 
 

@@ -4,7 +4,7 @@ from flask import request
 from flask_login import current_user
 
 from ltnserver import app, get_connection, respond_with
-from ltnserver.server import load_user_doc_id, delete_user_document, save_document, load_document
+from ltnserver.documents import load_user_doc_id, delete_user_document, save_document, load_document
 
 PREDICT_ENTITIES = 'entities'
 PREDICT_RELATIONS = 'relations'
