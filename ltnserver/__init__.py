@@ -8,14 +8,12 @@ from flask.ext.cors import CORS
 
 from settings import get_settings, get_root_path
 
-
 static_folder = "static"
 if len(sys.argv) >= 2:
     static_folder = sys.argv[1]
 
 app = Flask(__name__, static_folder=static_folder)
 CORS(app, supports_credentials=True)
-
 
 SECRET_KEY = get_settings('secrets').get('development_key')
 app.config.from_object(__name__)
