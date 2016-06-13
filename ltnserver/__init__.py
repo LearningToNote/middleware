@@ -82,3 +82,5 @@ def home():
 import server
 import training
 import user
+import types
+import tasks

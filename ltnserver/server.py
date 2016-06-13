@@ -11,7 +11,7 @@ from datetime import datetime
 
 from ltnserver import app, try_reconnecting, reset_connection, get_connection, respond_with
 from ltnserver.training import model_training_queue
-
+from ltnserver.types import get_entity_types, get_relation_types, get_base_types
 
 Entity = namedtuple('Entity', ['id', 'user_doc_id', 'type', 'start', 'end'])
 
@@ -20,93 +20,6 @@ PREDICT_RELATIONS = 'relations'
 
 TYPE_PLAINTEXT = 'plaintext'
 TYPE_BIOC = 'bioc'
-
-
-@app.route('/tasks')
-def get_tasks():
-    cursor = get_connection().cursor()
-    cursor.execute('SELECT t.id, t.name, t.domain, t.config, t.author, u.name '
-                   'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author ORDER BY t.id')
-    tasks = list()
-    for result in cursor.fetchall():
-        tasks.append({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2], 'task_config': result[3],
-                      'user_id': result[4], 'user_name': result[5]})
-    return respond_with(tasks)
-
-
-@app.route('/tasks/<task_id>', methods=['GET', 'POST', 'DELETE'])
-def manage_task(task_id):
-    cursor = get_connection().cursor()
-    if request.method == 'GET':
-        cursor.execute('SELECT t.id, t.name, t.domain, t.author, u.name '
-                       'FROM LTN_DEVELOP.TASKS t LEFT OUTER JOIN LTN_DEVELOP.USERS u ON u.id = t.author '
-                       'WHERE t.id = ?', (task_id,))
-        result = cursor.fetchone()
-        cursor.execute('SELECT d.id, count(ud.id) '
-                       'FROM LTN_DEVELOP.TASKS t '
-                       'JOIN LTN_DEVELOP.DOCUMENTS d ON d.task = t.id '
-                       'LEFT OUTER JOIN LTN_DEVELOP.USER_DOCUMENTS ud ON ud.document_id = d.id '
-                       'AND (ud.visibility = 1 OR ud.user_id = ?) '
-                       'WHERE t.id = ? '
-                       'GROUP BY d.id ORDER BY d.id ASC', (current_user.get_id(), task_id))
-        documents = list()
-        for row in cursor.fetchall():
-            documents.append({'document_id': row[0], 'user_document_count': row[1]})
-        return respond_with({'task_id': result[0], 'task_name': result[1], 'task_domain': result[2],
-                             'user_id': result[3], 'user_name': result[4], 'documents': documents})
-    elif request.method == 'POST':
-        req = request.get_json()
-        if req.get('task_id') is not None:
-            sql_to_prepare = 'CALL LTN_DEVELOP.update_task (?, ?, ?, ?, ?)'
-        else:
-            sql_to_prepare = 'CALL LTN_DEVELOP.add_task (?, ?, ?, ?, ?)'
-
-        params = {
-            'TASK_ID': req.get('task_id'),
-            'TASK_NAME': req.get('task_name'),
-            'TABLE_NAME': req.get('task_domain'),
-            'ER_ANALYSIS_CONFIG': req.get('task_config'),
-            'NEW_AUTHOR': req.get('user_id')
-        }
-
-        if params.get('TABLE_NAME', None) is None:
-            generate_table_name(params)
-        if params.get('NEW_AUTHOR', None) is None:
-            params['NEW_AUTHOR'] = current_user.get_id()
-
-        psid = cursor.prepare(sql_to_prepare)
-        ps = cursor.get_prepared_statement(psid)
-        try:
-            cursor.execute_prepared(ps, [params])
-            get_connection().commit()
-        except:
-            pass  # Rows affected warning
-        return 'OK', 200
-    elif request.method == 'DELETE':
-        sql_to_prepare = 'CALL LTN_DEVELOP.delete_task (?)'
-        params = {'TASK_ID': task_id}
-        psid = cursor.prepare(sql_to_prepare)
-        ps = cursor.get_prepared_statement(psid)
-        try:
-            cursor.execute_prepared(ps, [params])
-            get_connection().commit()
-        except:
-            pass  # Rows affected warning
-        return 'OK', 200
-
-
-def generate_table_name(task):
-    task['TABLE_NAME'] = task['TASK_NAME'].replace(' ', '')[:10] + str(random.getrandbits(42))
-
-
-@app.route('/tasks/<task_id>/entity_types')
-def get_task_entity_types(task_id):
-    return respond_with(get_task_types(task_id, relation=False))
-
-
-@app.route('/tasks/<task_id>/relation_types')
-def get_task_relation_types(task_id):
-    return respond_with(get_task_types(task_id, relation=True))
 
 
 @app.route('/user_documents_for/<document_id>')
@@ -345,111 +258,6 @@ def store_predicted_relations(pairs, user_document_id):
     get_connection().commit()
     cursor.close()
     return tuples
-
-
-def get_types(document_id, relation):
-    cursor = get_connection().cursor()
-    relation_flag = int(relation)
-    cursor.execute('''SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID
-                      FROM LTN_DEVELOP.TYPES t
-                      JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID
-                      JOIN LTN_DEVELOP.DOCUMENTS d ON tt.TASK_ID = d.TASK
-                      WHERE d.id = ? AND tt.RELATION = ?
-                      ORDER BY "GROUP" DESC''', (document_id, relation_flag))
-    types = list()
-    for row in cursor.fetchall():
-        types.append({"code": row[0], "name": "%s (%s)" % (row[4], row[1]), "groupId": row[2], "group": row[3],
-                      "label": row[4], "type_id": row[5], "id": row[6]})
-    return types
-
-
-def get_entity_types(document_id):
-    return get_types(document_id, relation=False)
-
-
-def get_relation_types(document_id):
-    return get_types(document_id, relation=True)
-
-
-def get_task_types(task_id, relation):
-    cursor = get_connection().cursor()
-    relation_flag = int(relation)
-    cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID '
-                   'FROM LTN_DEVELOP.TYPES t '
-                   'JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID '
-                   'WHERE tt.TASK_ID = ? AND tt.RELATION = ? '
-                   'ORDER BY "GROUP" DESC', (task_id, relation_flag))
-    types = list()
-    for row in cursor.fetchall():
-        types.append({"code": row[0], "name": row[1], "groupId": row[2], "group": row[3],
-                      "label": row[4], "type_id": row[5], "id": row[6]})
-    return types
-
-
-def load_types():
-    cursor = get_connection().cursor()
-    cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", ID FROM LTN_DEVELOP.TYPES ORDER BY "GROUP" DESC')
-    types = list()
-
-    for aType in cursor.fetchall():
-        types.append({"code": aType[0],
-                      "name": aType[1],
-                      "groupId": aType[2],
-                      "group": aType[3],
-                      "id": aType[4]})
-    return types
-
-
-@app.route('/base_types')
-def get_base_types():
-    return respond_with(load_types())
-
-
-@app.route('/task_types/<type_id>', methods=['GET', 'PUT', 'DELETE'])
-def manage_task_type(type_id):
-    cursor = get_connection().cursor()
-    if request.method == 'GET':
-        cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID '
-                       'FROM LTN_DEVELOP.TYPES t '
-                       'JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID '
-                       'WHERE tt.ID = ?', (type_id,))
-        row = cursor.fetchone()
-        if row:
-            return respond_with({"code": row[0], "name": row[1], "groupId": row[2], "group": row[3],
-                                 "label": row[4], "type_id": row[5], "id": row[6]})
-        return 'NOT FOUND', 404
-    elif request.method == 'PUT':
-        req = request.get_json()
-        updated_type = req.get('type')
-        cursor.execute('SELECT ID FROM LTN_DEVELOP.TASK_TYPES WHERE ID = ?', (type_id,))
-        already_existing = cursor.fetchone()
-        if already_existing:
-            cursor.execute('UPDATE LTN_DEVELOP.TASK_TYPES SET ID = ?, LABEL = ?, TYPE_ID = ? '
-                           'WHERE ID = ?',
-                           (updated_type.get('id'), updated_type.get('label'), updated_type.get('type_id'), type_id))
-            get_connection().commit()
-            return 'UPDATED', 200
-        else:
-            task_id = req.get('task')
-            is_relation = req.get('relation')
-            cursor.execute('INSERT INTO LTN_DEVELOP.TASK_TYPES (LABEL, TASK_ID, TYPE_ID, RELATION) '
-                           'VALUES (?, ?, ?, ?)',
-                           (updated_type.get('label'), task_id, updated_type.get('type_id'), is_relation))
-            get_connection().commit()
-            return 'CREATED', 200
-    elif request.method == 'DELETE':
-        cursor.execute('DELETE FROM LTN_DEVELOP.TASK_TYPES WHERE ID = ?', (type_id,))
-        get_connection().commit()
-        return 'DELETED', 200
-
-
-def load_type_id(code):
-    cursor = get_connection().cursor()
-    cursor.execute("SELECT ID FROM LTN_DEVELOP.TYPES WHERE CODE = ?", (code,))
-    result = cursor.fetchone()
-    if result:
-        return result[0]
-    return None
 
 
 def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
@@ -857,7 +665,7 @@ def extract_documents_from_bioc(bioc_text, id_prefix):
     string_doc = StringIO.StringIO(bioc_text.encode('utf-8'))
     bioc_collection = bioc.parse(string_doc)
     documents = []
-    known_types = dict((t['code'], t) for t in load_types())
+    known_types = dict((t['code'], t) for t in get_base_types())
     for bioc_doc in bioc_collection.documents:
         doc_text = ''
         passage_count = 0
