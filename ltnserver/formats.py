@@ -2,10 +2,14 @@ import bioc
 import StringIO
 
 from datetime import datetime
+
 from flask import request, Response
 from flask_login import current_user
 
-from ltnserver import app, get_connection
+from metapub import PubMedFetcher
+from metapub.exceptions import InvalidPMID
+
+from ltnserver import app, get_connection, respond_with
 from ltnserver.server import create_new_user_doc_id, save_document, load_user_doc_id, load_document
 from ltnserver.types import get_base_types
 
@@ -16,9 +20,11 @@ TYPE_BIOC = 'bioc'
 
 @app.route('/pubmed/<pubmed_id>')
 def fetch_pubmed_abstract(pubmed_id):
-    from metapub import PubMedFetcher
-    article = PubMedFetcher(cachedir=".cache/").article_by_pmid(pubmed_id)
-    return article.abstract
+    try:
+        article = PubMedFetcher(cachedir=".cache/").article_by_pmid(pubmed_id)
+        return respond_with(article.abstract)
+    except InvalidPMID:
+        return 'Invalid PubmedID', 500
 
 
 @app.route('/import', methods=['POST'])
