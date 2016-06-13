@@ -3,7 +3,7 @@ import random
 import bioc
 import StringIO
 
-from flask import Response, request, url_for, redirect
+from flask import Response, request
 from flask_login import current_user
 
 from collections import namedtuple
@@ -20,11 +20,6 @@ PREDICT_RELATIONS = 'relations'
 
 TYPE_PLAINTEXT = 'plaintext'
 TYPE_BIOC = 'bioc'
-
-
-@app.route('/')
-def home():
-    return redirect(url_for('static', filename='index.html'))
 
 
 @app.route('/tasks')

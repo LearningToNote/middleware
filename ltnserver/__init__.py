@@ -3,7 +3,7 @@ import pyhdb
 import json
 
 from signal import signal, SIGINT
-from flask import Flask, Response
+from flask import Flask, Response, redirect, url_for
 from flask.ext.cors import CORS
 
 from settings import get_settings, get_root_path
@@ -72,6 +72,11 @@ def handle_signal(s, _):
 
 def respond_with(response):
     return Response(json.dumps(response), mimetype='application/json')
+
+
+@app.route('/')
+def home():
+    return redirect(url_for('static', filename='index.html'))
 
 
 import server
