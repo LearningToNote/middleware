@@ -320,7 +320,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
 def get_relations(cursor, document_id, user_id, annotation_id_map, show_predictions):
     from ltnserver.prediction import get_current_prediction_user
     current_prediction_user = get_current_prediction_user(user_id, show_predictions)
-    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, T."NAME", '
+    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, TT.LABEL, '
                    'T.GROUP_ID, T."GROUP", UD1.USER_ID, TT.ID '
                    'FROM LTN_DEVELOP.PAIRS P '
                    'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON P.TYPE_ID = TT.ID '
