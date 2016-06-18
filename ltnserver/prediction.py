@@ -91,25 +91,25 @@ def predict_entities(document_id, task_id, target_user_document_id):
           fti.ta_offset as "start",
           fti.ta_offset + length(fti.ta_token) as "end",
           fti.ta_token,
-          t.code,
-          t.id
+          tt.id
         from "LTN_DEVELOP"."%s" fti
         join "LTN_DEVELOP"."TYPES" t on (t.code = fti.ta_type or
           (t.code = 'T092' and fti.ta_type like 'ORGANIZATION%%'))
+        join "LTN_DEVELOP"."TASK_TYPES" tt on t.id = tt.type_id and tt.task_id = ?
         join "LTN_DEVELOP"."%s" pos on fti.document_id = pos.document_id and fti.ta_offset = pos.ta_offset
         where fti.document_id = ?
           and length(fti.ta_token) >= 3
           and pos.ta_type in ('noun', 'abbreviation', 'proper name')
         order by fti.ta_offset
-    """ % (er_index_name, index_name), (document_id,))
+    """ % (er_index_name, index_name), (task_id, document_id,))
 
     entities = list()
     offsets = list()
 
     for row in cursor.fetchall():
-        entity_id = target_user_document_id + str(row[0]) + str(row[2]) + str(row[3])
+        entity_id = "%s_%s_%s_%s" % (target_user_document_id, row[0], row[2], row[3])
         entity_id = entity_id.replace(' ', '_').replace('/', '_')
-        entities.append((entity_id, target_user_document_id, int(row[4]), None, row[2]))
+        entities.append((entity_id, target_user_document_id, int(row[3]), None, row[2]))
         offsets.append((row[0], row[1], entity_id, target_user_document_id))
 
     cursor.executemany('insert into "LTN_DEVELOP"."ENTITIES" VALUES (?, ?, ?, ?, ?)', entities)
