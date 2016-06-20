@@ -298,6 +298,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
             user_info[new_id] = {'name': str(result[9]), 'color': colors[(new_id - user_offset) % len(colors)]}
             user_id_mapping[creator] = new_id
 
+        # the bioc library expects all attributes to be strings (and TextAE doesn't care)
         anno_info = {"code": str(result[4]),
                      "name": str(result[5]),
                      "groupId": str(result[6]),
@@ -335,6 +336,7 @@ def get_relations(cursor, document_id, user_id, annotation_id_map, show_predicti
                     document_id, user_id, current_prediction_user))
     relations = []
     for result in cursor.fetchall():
+        # the bioc library expects all attributes to be strings (and TextAE doesn't care)
         type_info = {"id": str(result[9]),
                      "code": str(result[4]),
                      "name": str(result[5]),
