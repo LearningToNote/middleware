@@ -303,7 +303,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
                      "groupId": str(result[6]),
                      "group": str(result[7]),
                      "label": str(result[8]),
-                     "id": result[10]}
+                     "id": str(result[10])}
         denotation['id'] = current_id
         denotation['obj'] = anno_info
         denotation['span'] = {}
@@ -335,7 +335,7 @@ def get_relations(cursor, document_id, user_id, annotation_id_map, show_predicti
                     document_id, user_id, current_prediction_user))
     relations = []
     for result in cursor.fetchall():
-        type_info = {"id": result[9],
+        type_info = {"id": str(result[9]),
                      "code": str(result[4]),
                      "name": str(result[5]),
                      "groupId": str(result[6]),
