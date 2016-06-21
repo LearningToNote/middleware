@@ -1,16 +1,15 @@
-import bioc
 import StringIO
-
 from datetime import datetime
 
+import bioc
 from flask import request, Response
 from flask_login import current_user
-
 from metapub import PubMedFetcher
 from metapub.exceptions import InvalidPMID
 
 from ltnserver import app, get_connection, respond_with
-from ltnserver.documents import create_new_user_doc_id, save_document, load_user_doc_id, load_document
+from ltnserver.documents import create_new_user_doc_id, save_document, load_user_doc_id, load_document, \
+    get_associated_users
 from ltnserver.types import get_task_types
 
 TYPE_PLAINTEXT = 'plaintext'
@@ -228,11 +227,20 @@ def create_bioc_document_from_document_json(document):
 
 @app.route('/export/<document_id>', methods=['GET'])
 def export(document_id):
-    user_id = request.args.get('user_id', current_user.get_id())
-    document = load_document(document_id, user_id)
+    user_id = request.args.get('user_id', None)
+    if user_id is None:
+        user_ids_to_export = get_associated_users(document_id)
+    else:
+        user_ids_to_export = [user_id]
+    return export_document(document_id, user_ids_to_export)
+
+
+def export_document(document_id, users):
     bcollection = bioc.BioCCollection()
-    bdocument = create_bioc_document_from_document_json(document)
-    bcollection.add_document(bdocument)
+    for user_id in users:
+        document = load_document(document_id, user_id)
+        bdocument = create_bioc_document_from_document_json(document)
+        bcollection.add_document(bdocument)
     result = bcollection.tobioc()
     response = Response(result, mimetype='text/xml')
     response.headers["Content-Disposition"] = "attachment; filename=" + document_id + ".xml"

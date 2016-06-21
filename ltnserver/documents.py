@@ -363,6 +363,16 @@ def get_relations(cursor, document_id, user_id, annotation_id_map, show_predicti
     return relations
 
 
+def get_associated_users(document_id):
+    cursor = get_connection().cursor()
+    cursor.execute("SELECT DISTINCT ud.user_id "
+                   "FROM LTN_DEVELOP.USER_DOCUMENTS ud "
+                   "JOIN LTN_DEVELOP.DOCUMENTS d ON ud.document_id = d.id")
+    users = map(lambda row: row[0], cursor.fetchall())
+    cursor.close()
+    return users
+
+
 def delete_user_document(user_document_id):
     return delete_user_documents([user_document_id])
 
