@@ -11,8 +11,7 @@ from metapub.exceptions import InvalidPMID
 
 from ltnserver import app, get_connection, respond_with
 from ltnserver.documents import create_new_user_doc_id, save_document, load_user_doc_id, load_document
-from ltnserver.types import get_base_types
-
+from ltnserver.types import get_task_types
 
 TYPE_PLAINTEXT = 'plaintext'
 TYPE_BIOC = 'bioc'
@@ -41,7 +40,7 @@ def import_document():
     if doc_type == TYPE_PLAINTEXT:
         documents.append(req)
     elif doc_type == TYPE_BIOC:
-        documents = extract_documents_from_bioc(req['text'], req['document_id'])
+        documents = extract_documents_from_bioc(req['text'], req['document_id'], task)
     else:
         return "Document type not supported", 400
 
@@ -63,11 +62,11 @@ def import_document():
     return "Successfully imported", 201
 
 
-def extract_documents_from_bioc(bioc_text, id_prefix):
+def extract_documents_from_bioc(bioc_text, id_prefix, task):
     string_doc = StringIO.StringIO(bioc_text.encode('utf-8'))
     bioc_collection = bioc.parse(string_doc)
     documents = []
-    known_types = dict((t['code'], t) for t in get_base_types())
+    known_types = dict((t['code'], t) for t in get_task_types(task, relation=False))
     for bioc_doc in bioc_collection.documents:
         doc_text = ''
         passage_count = 0

@@ -263,7 +263,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
                    'JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID '
                    'LEFT OUTER JOIN LTN_DEVELOP.USERS U ON UD.USER_ID = U.ID '
                    'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON E.TYPE_ID = TT.ID '
-                   'JOIN LTN_DEVELOP.TYPES T ON TT.TYPE_ID = T.ID '
+                   'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON TT.TYPE_ID = T.ID '
                    'WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ? OR UD.USER_ID = ? '
                    'ORDER BY E.ID', (document_id, user_id, current_prediction_user))
     denotations = []
