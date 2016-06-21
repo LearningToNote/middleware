@@ -221,7 +221,7 @@ def load_user_doc_id(document_id, user_id):
 def load_document(document_id, user_id, show_predictions=False):
     cursor = get_connection().cursor()
     result = {}
-    print "Loading information for document_id: " + str(document_id) + " and user: " + str(current_user.get_id())
+    print "Loading information for document_id: '%s' and user: '%s'" % (document_id, user_id)
     result['text'] = get_text(cursor, document_id)
     denotations, users, annotation_id_map = get_denotations_and_users(cursor, document_id, user_id, show_predictions)
     result['denotations'] = denotations
@@ -271,7 +271,7 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
     previous_id = None
     # todo: handle being not logged in
     colors = ['blue', 'navy', 'brown', 'chocolate', 'orange', 'maroon', 'turquoise']
-    user_id_mapping = {current_user.get_id(): 0}
+    user_id_mapping = {user_id: 0}
     prediction_engine_info = {'name': 'Prediction Engine', 'color': 'gray'}
     current_user_info = {'name': 'You', 'color': '#55AA55'}
     user_info = {0: current_user_info}

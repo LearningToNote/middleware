@@ -228,7 +228,8 @@ def create_bioc_document_from_document_json(document):
 
 @app.route('/export/<document_id>', methods=['GET'])
 def export(document_id):
-    document = load_document(document_id, current_user.get_id())
+    user_id = request.args.get('user_id', current_user.get_id())
+    document = load_document(document_id, user_id)
     bcollection = bioc.BioCCollection()
     bdocument = create_bioc_document_from_document_json(document)
     bcollection.add_document(bdocument)
