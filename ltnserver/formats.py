@@ -65,7 +65,6 @@ def extract_documents_from_bioc(bioc_text, id_prefix, task):
     string_doc = StringIO.StringIO(bioc_text.encode('utf-8'))
     bioc_collection = bioc.parse(string_doc)
     documents = []
-    known_types = dict((t['code'], t) for t in get_task_types(task, relation=False))
     for bioc_doc in bioc_collection.documents:
         doc_text = ''
         passage_count = 0
@@ -77,10 +76,9 @@ def extract_documents_from_bioc(bioc_text, id_prefix, task):
                     doc_text += passage.text
                     prefix = 'p' + str(passage_count)
                     passage_count += 1
-                    passage_denotations = extract_denotations_from_bioc_object(passage, known_types, prefix)
+                    passage_denotations = extract_denotations_from_bioc_object(passage, task, prefix)
                     denotations_map = dict(map(lambda d: (d['id'][len(prefix):], d['id']), passage_denotations))
-                    passage_relations = extract_relations_from_bioc_object(passage, known_types,
-                                                                           prefix, denotations_map)
+                    passage_relations = extract_relations_from_bioc_object(passage, task, prefix, denotations_map)
                     denotations.extend(passage_denotations)
                     relations.extend(passage_relations)
                 else:
@@ -93,10 +91,9 @@ def extract_documents_from_bioc(bioc_text, id_prefix, task):
                         doc_text += sentence.text
                         prefix = 's' + str(sentence_count)
                         sentence_count += 1
-                        sentence_denotations = extract_denotations_from_bioc_object(passage, known_types, prefix)
+                        sentence_denotations = extract_denotations_from_bioc_object(passage, task, prefix)
                         denotations_map = dict(map(lambda d: (d['id'][len(prefix):], d['id']), sentence_denotations))
-                        sentence_relations = extract_relations_from_bioc_object(passage, known_types,
-                                                                                prefix, denotations_map)
+                        sentence_relations = extract_relations_from_bioc_object(passage, task, prefix, denotations_map)
                         denotations.extend(sentence_denotations)
                         relations.extend(sentence_relations)
         document = {
@@ -110,8 +107,9 @@ def extract_documents_from_bioc(bioc_text, id_prefix, task):
     return documents
 
 
-def extract_denotations_from_bioc_object(bioc_object, known_types, id_prefix):
+def extract_denotations_from_bioc_object(bioc_object, task, id_prefix):
     denotations = []
+    known_types = dict((t['code'], t) for t in get_task_types(task, relation=False))
     for annotation in bioc_object.annotations:
         denotation = {'id': id_prefix + annotation.id, 'span': {}}
         denotation['span']['begin'] = annotation.locations[0].offset
@@ -124,7 +122,7 @@ def extract_denotations_from_bioc_object(bioc_object, known_types, id_prefix):
                 break
         if denotation.get('obj') is None:
             label_guesses = filter(
-                lambda x: x[0] == 'label' or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
+                lambda x: x[0] in ['label', 'type'] or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
                 annotation.infons.iteritems())
             if len(label_guesses) > 0:
                 denotation['obj'] = {'label': label_guesses[0][1]}
@@ -133,8 +131,9 @@ def extract_denotations_from_bioc_object(bioc_object, known_types, id_prefix):
     return denotations
 
 
-def extract_relations_from_bioc_object(bioc_object, known_types, id_prefix, denotations):
+def extract_relations_from_bioc_object(bioc_object, task, id_prefix, denotations):
     relations = []
+    known_types = dict((t['code'], t) for t in get_task_types(task, relation=True))
     for b_relation in bioc_object.relations:
         nodes = list(b_relation.nodes)
         subj_id = denotations.get(nodes[0].refid, None)
@@ -153,7 +152,7 @@ def extract_relations_from_bioc_object(bioc_object, known_types, id_prefix, deno
                         }
             if relation_type is None:
                 label_guesses = filter(
-                    lambda x: x[0] == 'label' or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
+                    lambda x: x[0] in ['label', 'type'] or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
                     b_relation.infons.iteritems())
                 if len(label_guesses) > 0:
                     relation['pred'] = {'label': label_guesses[0][1]}
