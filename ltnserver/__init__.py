@@ -46,6 +46,15 @@ def get_connection():
     return connection
 
 
+def execute_prepared(query, params, commit=False):
+    cursor = get_connection().cursor()
+    psid = cursor.prepare(query)
+    ps = cursor.get_prepared_statement(psid)
+    cursor.execute_prepared(ps, [params])
+    if commit:
+        get_connection().commit()
+
+
 def try_reconnecting():
     try:
         global connection

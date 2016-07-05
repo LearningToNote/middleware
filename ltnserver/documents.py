@@ -4,7 +4,7 @@ from flask_login import current_user
 from datetime import datetime
 from collections import namedtuple
 
-from ltnserver import app, try_reconnecting, reset_connection, get_connection, respond_with
+from ltnserver import app, try_reconnecting, reset_connection, get_connection, respond_with, execute_prepared
 from ltnserver.training import model_training_queue
 from ltnserver.types import get_entity_types, get_relation_types
 
@@ -98,21 +98,22 @@ class Document:
         if Document.exists(self.id):
             raise NotImplementedError("Updating existing documents is not supported.")
         else:
-            cursor = get_connection().cursor()
-            sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?, ?)'
             params = {
                 'DOCUMENT_ID': self.id,
                 'DOCUMENT_TEXT': self.text.replace("'", "''"),
                 'TASK': self.task
             }
-            psid = cursor.prepare(sql_to_prepare)
-            ps = cursor.get_prepared_statement(psid)
-            cursor.execute_prepared(ps, [params])
-            get_connection().commit()
+            execute_prepared('CALL LTN_DEVELOP.add_document (?, ?, ?)', params, commit=True)
 
     def delete(self):
         Document.fail_if_not_exists(self.id)
-        delete_document(self.id)
+        self.delete_user_documents()
+        execute_prepared('CALL LTN_DEVELOP.delete_document (?)', {'DOCUMENT_ID': self.id}, commit=True)
+
+    def delete_user_documents(self):
+        for user_document in self.get_user_documents():
+            user_document.delete()
+        self.user_documents = dict()
 
     def get_users(self):
         return self.user_documents.keys()
