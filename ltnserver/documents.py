@@ -94,35 +94,39 @@ class Document:
         self.task = task
         self.text = text
 
-    @classmethod
-    def by_id(cls, document_id, task):
-        cursor = get_connection().cursor()
-        text = get_text(cursor, document_id)
-        return Document(document_id, task, text)
-
     def save(self):
-        if self.is_already_persisted():
+        if Document.exists(self.id):
             # update existing document
             pass
         else:
             store_document(self)
 
     def delete(self):
-        if self.is_already_persisted():
-            delete_document(self.id)
-        else:
-            raise KeyError("Document '%s' does not exist." % (self.id,))
-
-    def is_already_persisted(self):
-        cursor = get_connection().cursor()
-        cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.DOCUMENTS WHERE ID = ?", (self.id,))
-        return cursor.fetchone()[0] != 0
+        Document.fail_if_not_exists(self.id)
+        delete_document(self.id)
 
     def get_users(self):
         return self.user_documents.keys()
 
     def get_user_documents(self):
         return self.user_documents.values()
+
+    @classmethod
+    def by_id(cls, document_id, task):
+        cursor = get_connection().cursor()
+        text = get_text(cursor, document_id)
+        return Document(document_id, task, text)
+
+    @classmethod
+    def exists(cls, document_id):
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.DOCUMENTS WHERE ID = ?", (document_id,))
+        return cursor.fetchone()[0] != 0
+
+    @classmethod
+    def fail_if_not_exists(cls, document_id):
+        if not Document.exists(document_id):
+            raise KeyError("Document '%s' does not exist.", (document_id,))
 
 
 def store_document(document):
