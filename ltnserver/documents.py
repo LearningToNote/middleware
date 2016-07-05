@@ -99,7 +99,17 @@ class Document:
             # update existing document
             pass
         else:
-            store_document(self)
+            cursor = get_connection().cursor()
+            sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?, ?)'
+            params = {
+                'DOCUMENT_ID': self.id,
+                'DOCUMENT_TEXT': self.text.replace("'", "''"),
+                'TASK': self.task
+            }
+            psid = cursor.prepare(sql_to_prepare)
+            ps = cursor.get_prepared_statement(psid)
+            cursor.execute_prepared(ps, [params])
+            get_connection().commit()
 
     def delete(self):
         Document.fail_if_not_exists(self.id)
@@ -127,20 +137,6 @@ class Document:
     def fail_if_not_exists(cls, document_id):
         if not Document.exists(document_id):
             raise KeyError("Document '%s' does not exist.", (document_id,))
-
-
-def store_document(document):
-    cursor = get_connection().cursor()
-    sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?, ?)'
-    params = {
-        'DOCUMENT_ID': document.id,
-        'DOCUMENT_TEXT': document.text.replace("'", "''"),
-        'TASK': document.task
-    }
-    psid = cursor.prepare(sql_to_prepare)
-    ps = cursor.get_prepared_statement(psid)
-    cursor.execute_prepared(ps, [params])
-    get_connection().commit()
 
 
 @app.route('/user_documents_for/<document_id>')
