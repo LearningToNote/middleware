@@ -7,7 +7,7 @@ from collections import namedtuple
 from ltnserver import app, try_reconnecting, reset_connection, get_connection, respond_with, execute_prepared
 from ltnserver.training import model_training_queue
 from ltnserver.types import get_entity_types, get_relation_types
-
+from ltnserver.user import User
 
 Entity = namedtuple('Entity', ['id', 'user_id', 'start', 'end', 'label', 'type_id'])
 Relation = namedtuple('Relation', ['id', 'e1_id', 'e2_id', 'label', 'type_id'])
@@ -15,15 +15,21 @@ Relation = namedtuple('Relation', ['id', 'e1_id', 'e2_id', 'label', 'type_id'])
 
 class UserDocument:
 
-    def __init__(self, user_document_id, document_id, user_id, entities, relations):
+    def __init__(self, user_document_id, document_id, user_id, entities, relations, visible):
         self.document_id = document_id
         self.user_id = user_id
         self.entities = entities or dict()
         self.relations = relations or dict()
+        self.visible = visible
         if user_document_id is not None:
             self.id = user_document_id
         else:
             self.id = "%s_%s" % (user_id, document_id)
+
+    def get_summary(self):
+        return {'id': self.id, 'entities': len(self.entities), 'pairs': len(self.relations), 'visible': self.visible,
+                'user_id': self.user_id, 'user_name': User.get(self.user_id, get_connection().cursor()).name,
+                'from_current_user': self.user_id == current_user.get_id()}
 
     def save(self):
         if UserDocument.exists(self.id):
@@ -39,11 +45,12 @@ class UserDocument:
     def by_id(cls, user_document_id):
         UserDocument.fail_if_not_exists(user_document_id)
         cursor = get_connection().cursor()
-        cursor.execute("SELECT user_id, document_id FROM LTN_DEVELOP.USER_DOCUMENTS WHERE id = ?", (user_document_id,))
-        user_id, document_id = cursor.fetchone()
+        cursor.execute("SELECT user_id, document_id, visibility "
+                       "FROM LTN_DEVELOP.USER_DOCUMENTS WHERE id = ?", (user_document_id,))
+        user_id, document_id, visibility = cursor.fetchone()
         entities = UserDocument.get_entities(user_document_id)
         relations = UserDocument.get_relations(user_document_id)
-        return UserDocument(user_document_id, document_id, user_id, entities, relations)
+        return UserDocument(user_document_id, document_id, user_id, entities, relations, bool(visibility))
 
     @classmethod
     def exists(cls, user_document_id):
@@ -93,6 +100,7 @@ class Document:
         self.user_documents = dict()
         self.task = task
         self.text = text
+        self.update_user_documents()
 
     def save(self):
         if Document.exists(self.id):
@@ -121,9 +129,20 @@ class Document:
     def get_user_documents(self):
         return self.user_documents.values()
 
-    @classmethod
-    def by_id(cls, document_id, task):
+    def update_user_documents(self):
+        self.user_documents = dict()
         cursor = get_connection().cursor()
+        cursor.execute('SELECT id FROM LTN_DEVELOP.USER_DOCUMENTS WHERE document_id = ?', (self.id,))
+        for row in cursor.fetchall():
+            user_document_id = row[0]
+            self.user_documents[user_document_id] = UserDocument.by_id(user_document_id)
+
+    @classmethod
+    def by_id(cls, document_id):
+        Document.fail_if_not_exists(document_id)
+        cursor = get_connection().cursor()
+        cursor.execute('SELECT task FROM LTN_DEVELOP.DOCUMENTS WHERE id = ?', (document_id,))
+        task = cursor.fetchone()[0]
         text = get_text(cursor, document_id)
         return Document(document_id, task, text)
 
@@ -141,21 +160,9 @@ class Document:
 
 @app.route('/user_documents_for/<document_id>')
 def get_document_details(document_id):
-    user_documents = list()
-    cursor = get_connection().cursor()
-    user_id = current_user.get_id()
-    cursor.execute(
-        'SELECT d.id, MIN(d.user_id), MIN(u.name), COUNT(DISTINCT e.id), COUNT(distinct p.id), MIN(d.visibility) '
-        'FROM LTN_DEVELOP.USER_DOCUMENTS d '
-        'JOIN LTN_DEVELOP.USERS u ON u.id = d.user_id '
-        'LEFT OUTER JOIN LTN_DEVELOP.ENTITIES e ON e.user_doc_id = d.id '
-        'LEFT OUTER JOIN LTN_DEVELOP.PAIRS p ON p.user_doc_id = d.id AND p.ddi = 1 '
-        'WHERE d.document_id = ? AND (d.visibility = 1 OR d.user_id = ?) '
-        'GROUP BY d.id', (document_id, user_id))
-    for row in cursor.fetchall():
-        user_documents.append({'id': row[0], 'user_id': row[1], 'user_name': row[2],
-                               'entities': row[3], 'pairs': row[4],
-                               'visible': bool(row[5]), 'from_current_user': row[1] == user_id})
+    document = Document.by_id(document_id)
+    user_documents = filter(lambda d: d.visible or d.user_id == current_user.get_id(), document.get_user_documents())
+    user_documents = map(lambda d: d.get_summary(), user_documents)
     return respond_with(user_documents)
 
 
