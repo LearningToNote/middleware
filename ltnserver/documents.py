@@ -96,8 +96,7 @@ class Document:
 
     def save(self):
         if Document.exists(self.id):
-            # update existing document
-            pass
+            raise NotImplementedError("Updating existing documents is not supported.")
         else:
             cursor = get_connection().cursor()
             sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?, ?)'
