@@ -8,6 +8,30 @@ from ltnserver.training import model_training_queue
 from ltnserver.types import get_entity_types, get_relation_types
 
 
+class UserDocument:
+
+    def __init__(self, user_document_id, document_id, user_id):
+        self.document_id = document_id
+        self.user_id = user_id
+        if user_document_id is not None:
+            self.id = user_document_id
+        else:
+            self.id = "%s_%s" % (user_id, document_id)
+
+
+class Document:
+
+    def __init__(self, document_id):
+        self.id = document_id
+        self.user_documents = dict()
+
+    def get_users(self):
+        return self.user_documents.keys()
+
+    def get_user_documents(self):
+        return self.user_documents.values()
+
+
 @app.route('/user_documents_for/<document_id>')
 def get_document_details(document_id):
     user_documents = list()
