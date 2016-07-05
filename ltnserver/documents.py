@@ -2,21 +2,88 @@ from flask import request
 from flask_login import current_user
 
 from datetime import datetime
+from collections import namedtuple
 
 from ltnserver import app, try_reconnecting, reset_connection, get_connection, respond_with
 from ltnserver.training import model_training_queue
 from ltnserver.types import get_entity_types, get_relation_types
 
 
+Entity = namedtuple('Entity', ['id', 'user_id', 'start', 'end', 'label', 'type_id'])
+Relation = namedtuple('Relation', ['id', 'e1_id', 'e2_id', 'label', 'type_id'])
+
+
 class UserDocument:
 
-    def __init__(self, user_document_id, document_id, user_id):
+    def __init__(self, user_document_id, document_id, user_id, entities, relations):
         self.document_id = document_id
         self.user_id = user_id
+        self.entities = entities or dict()
+        self.relations = relations or dict()
         if user_document_id is not None:
             self.id = user_document_id
         else:
             self.id = "%s_%s" % (user_id, document_id)
+
+    def save(self):
+        if UserDocument.exists(self.id):
+            pass
+        else:
+            pass
+
+    def delete(self):
+        UserDocument.fail_if_not_exists(self.id)
+        delete_user_document(self.id)
+
+    @classmethod
+    def by_id(cls, user_document_id):
+        UserDocument.fail_if_not_exists(user_document_id)
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT user_id, document_id FROM LTN_DEVELOP.USER_DOCUMENTS WHERE id = ?", (user_document_id,))
+        user_id, document_id = cursor.fetchone()
+        entities = UserDocument.get_entities(user_document_id)
+        relations = UserDocument.get_relations(user_document_id)
+        return UserDocument(user_document_id, document_id, user_id, entities, relations)
+
+    @classmethod
+    def exists(cls, user_document_id):
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.USER_DOCUMENTS WHERE ID = ?", (user_document_id,))
+        return cursor.fetchone()[0] != 0
+
+    @classmethod
+    def fail_if_not_exists(cls, user_document_id):
+        if not UserDocument.exists(user_document_id):
+            raise KeyError("UserDocument '%s' does not exist.", (user_document_id,))
+
+    @classmethod
+    def get_entities(cls, user_document_id):
+        UserDocument.fail_if_not_exists(user_document_id)
+        cursor = get_connection().cursor()
+        cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", E.LABEL, TT.ID '
+                       'FROM LTN_DEVELOP.ENTITIES E '
+                       'JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID '
+                       'JOIN LTN_DEVELOP.USER_DOCUMENTS UD ON UD.ID = E.USER_DOC_ID '
+                       'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON E.TYPE_ID = TT.ID '
+                       'WHERE UD.ID = ? '
+                       'ORDER BY E.ID', (user_document_id,))
+        return [Entity(*t) for t in cursor.fetchall()]
+
+    @classmethod
+    def get_relations(cls, user_document_id):
+        UserDocument.fail_if_not_exists(user_document_id)
+        cursor = get_connection().cursor()
+        cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, TT.ID '
+                       'FROM LTN_DEVELOP.PAIRS P '
+                       'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON P.TYPE_ID = TT.ID '
+                       'JOIN LTN_DEVELOP.ENTITIES E1 '
+                       '  ON P.E1_ID = E1.ID AND P.DDI = 1 AND P.USER_DOC_ID = E1.USER_DOC_ID '
+                       'JOIN LTN_DEVELOP.ENTITIES E2 '
+                       '  ON P.E2_ID = E2.ID AND P.DDI = 1 AND P.USER_DOC_ID = E2.USER_DOC_ID '
+                       'JOIN LTN_DEVELOP.USER_DOCUMENTS UD1 ON E1.USER_DOC_ID = UD1.ID '
+                       'JOIN LTN_DEVELOP.USER_DOCUMENTS UD2 ON E2.USER_DOC_ID = UD2.ID '
+                       'WHERE UD1.ID = ?', (user_document_id,))
+        return [Relation(*t) for t in cursor.fetchall()]
 
 
 class Document:
@@ -41,7 +108,10 @@ class Document:
             store_document(self)
 
     def delete(self):
-        delete_document(self.id)
+        if self.is_already_persisted():
+            delete_document(self.id)
+        else:
+            raise KeyError("Document '%s' does not exist." % (self.id,))
 
     def is_already_persisted(self):
         cursor = get_connection().cursor()
