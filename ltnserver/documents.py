@@ -21,15 +21,52 @@ class UserDocument:
 
 class Document:
 
-    def __init__(self, document_id):
+    def __init__(self, document_id, task, text):
         self.id = document_id
         self.user_documents = dict()
+        self.task = task
+        self.text = text
+
+    @classmethod
+    def by_id(cls, document_id, task):
+        cursor = get_connection().cursor()
+        text = get_text(cursor, document_id)
+        return Document(document_id, task, text)
+
+    def save(self):
+        if self.is_already_persisted():
+            # update existing document
+            pass
+        else:
+            store_document(self)
+
+    def delete(self):
+        delete_document(self.id)
+
+    def is_already_persisted(self):
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.DOCUMENTS WHERE ID = ?", (self.id,))
+        return cursor.fetchone()[0] != 0
 
     def get_users(self):
         return self.user_documents.keys()
 
     def get_user_documents(self):
         return self.user_documents.values()
+
+
+def store_document(document):
+    cursor = get_connection().cursor()
+    sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?, ?)'
+    params = {
+        'DOCUMENT_ID': document.id,
+        'DOCUMENT_TEXT': document.text.replace("'", "''"),
+        'TASK': document.task
+    }
+    psid = cursor.prepare(sql_to_prepare)
+    ps = cursor.get_prepared_statement(psid)
+    cursor.execute_prepared(ps, [params])
+    get_connection().commit()
 
 
 @app.route('/user_documents_for/<document_id>')
