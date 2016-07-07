@@ -178,31 +178,14 @@ def save_userdoc_visibility(user_doc_id):
     return "OK", 200
 
 
-@app.route('/user_documents/<user_id>')
-def get_user_documents(user_id):
-    if user_id != current_user.get_id():
-        return "Not authorized to view the documents of this user.", 401
-    cursor = get_connection().cursor()
-    cursor.execute("SELECT ID, USER_ID, DOCUMENT_ID, VISIBILITY, CREATED_AT, UPDATED_AT "
-                   "FROM LTN_DEVELOP.USER_DOCUMENTS "
-                   "WHERE USER_ID = ? OR VISIBILITY > 0 ORDER BY DOCUMENT_ID", (user_id,))
-    user_documents = list()
-    for result in cursor.fetchall():
-        user_documents.append({"id": result[0], "user_id": result[1], "document_id": result[2], "visibility": result[3],
-                               "created_at": result[4].strftime('%Y-%m-%d %H:%M:%S'),
-                               "updated_at": result[5].strftime('%Y-%m-%d %H:%M:%S')})
-    cursor.close()
-    return respond_with(user_documents)
-
-
 @app.route('/user_documents/<user_document_id>', methods=['DELETE'])
 def manage_user_documents(user_document_id):
     if request.method == 'DELETE':
-        successful = delete_user_document(user_document_id)
-        if not successful:
-            return 'Deletion unsuccessful.', 500
-        else:
+        try:
+            UserDocument.by_id(user_document_id).delete()
             return 'Deleted.', 200
+        except KeyError:
+            return 'The user document does not exist.', 500
 
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
