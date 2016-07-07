@@ -33,7 +33,11 @@ class UserDocument:
 
     def save(self):
         if UserDocument.exists(self.id):
-            pass
+            cursor = get_connection().cursor()
+            cursor.execute("UPDATE LTN_DEVELOP.USER_DOCUMENTS "
+                           "SET visibility = ? "
+                           "WHERE id = ?", (int(self.visible), self.id))
+            get_connection().commit()
         else:
             pass
 
@@ -166,17 +170,12 @@ def get_document_details(document_id):
     return respond_with(user_documents)
 
 
-@app.route('/userdoc_visibility/<doc_id>', methods=['POST'])
-def save_userdoc_visibility(doc_id):
-    user_doc_id = load_user_doc_id(doc_id, current_user.get_id())
-    visibility = request.get_json()['visible']
-    cursor = get_connection().cursor()
-    cursor.execute('UPDATE LTN_DEVELOP.USER_DOCUMENTS '
-                   'SET VISIBILITY = ? WHERE ID = ?',
-                   (visibility, user_doc_id))
-    cursor.close()
-    get_connection().commit()
-    return "", 200
+@app.route('/userdoc_visibility/<user_doc_id>', methods=['POST'])
+def save_userdoc_visibility(user_doc_id):
+    user_document = UserDocument.by_id(user_doc_id)
+    user_document.visible = request.get_json()['visible']
+    user_document.save()
+    return "OK", 200
 
 
 @app.route('/user_documents/<user_id>')
