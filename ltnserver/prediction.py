@@ -4,7 +4,7 @@ from flask import request
 from flask_login import current_user
 
 from ltnserver import app, get_connection, respond_with
-from ltnserver.documents import load_user_doc_id, delete_user_document, save_document, load_document
+from ltnserver.documents import delete_user_document, save_document, load_document, Document, create_new_user_doc_id
 
 PREDICT_ENTITIES = 'entities'
 PREDICT_RELATIONS = 'relations'
@@ -27,18 +27,22 @@ def predict():
     task_id = data['task_id']
     jobs = data.get('jobs', [PREDICT_ENTITIES])
     document_id = data['document_id']
+    document = Document.by_id(document_id)
     user_id = data.get('user_id', current_user.get_id())
     current_prediction_user = prediction_user_for_user(user_id)
-    prediction_user_doc_id = load_user_doc_id(document_id, current_prediction_user)
+    prediction_user_doc_id = document.user_documents.get(current_prediction_user, None) or create_new_user_doc_id(document.id, current_prediction_user)
     delete_user_document(prediction_user_doc_id)
+
+    document = Document.by_id(document_id)
+    user_document = document.user_documents.get(user_id)
 
     document_data = json.loads(data.get('current_state', None))
     if document_data is None:
-        document_data = load_document(document_id, user_id)
+        document_data = load_document(user_document)
     else:
         # the current status has to be saved first in order to disambiguate the ids of the annotations
-        user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-        successful = save_document(document_data, user_doc_id, document_id, current_user.get_id(), task_id)
+        user_document = document.user_documents.get(current_user.get_id())
+        successful = save_document(document_data, user_document.id, document_id, current_user.get_id(), task_id)
         if not successful:
             return "Could not save the document", 500
 
@@ -57,7 +61,7 @@ def predict():
         if PREDICT_ENTITIES not in jobs:
             remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc_id)
 
-    document_data = load_document(document_id, current_user.get_id(), True)
+    document_data = load_document(user_document, show_predictions=True)
     return respond_with(document_data)
 
 

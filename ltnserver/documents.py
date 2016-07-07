@@ -192,9 +192,11 @@ def manage_user_documents(user_document_id):
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
 def get_document(document_id):
+    document = Document.by_id(document_id)
+    user_document = document.user_documents.get(current_user.get_id())
     if request.method == 'GET':
         try:
-            result = load_document(document_id, current_user.get_id())
+            result = load_document(user_document)
             return respond_with(result)
         except DatabaseError:
             reset_connection()
@@ -202,8 +204,7 @@ def get_document(document_id):
     if request.method == 'POST':
         successful = False
         try:
-            user_doc_id = load_user_doc_id(document_id, current_user.get_id())
-            successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id(),
+            successful = save_document(request.get_json(), user_document.id, document.id, current_user.get_id(),
                                        request.get_json()['task_id'])
         except DatabaseError:
             reset_connection()
@@ -325,27 +326,17 @@ def create_new_user_doc_id(user_id, document_id):
     return str(user_id) + '_' + str(document_id)
 
 
-def load_user_doc_id(document_id, user_id):
-    cursor = get_connection().cursor()
-    cursor.execute("SELECT ID FROM LTN_DEVELOP.USER_DOCUMENTS WHERE DOCUMENT_ID = ? AND USER_ID = ?",
-                   (document_id, user_id))
-    result = cursor.fetchone()
-    if result:
-        return str(result[0])
-    return create_new_user_doc_id(user_id, document_id)
-
-
-def load_document(document_id, user_id, show_predictions=False):
+def load_document(user_document, show_predictions=False):
     cursor = get_connection().cursor()
     result = {}
-    print "Loading information for document_id: '%s' and user: '%s'" % (document_id, user_id)
-    result['text'] = get_text(cursor, document_id)
-    denotations, users, annotation_id_map = get_denotations_and_users(cursor, document_id, user_id, show_predictions)
+    print "Loading information for document_id: '%s' and user: '%s'" % (user_document.document_id, user_document.user_id)
+    result['text'] = get_text(cursor, user_document.document_id)
+    denotations, users, annotation_id_map = get_denotations_and_users(cursor, user_document.document_id, user_document.user_id, show_predictions)
     result['denotations'] = denotations
-    result['relations'] = get_relations(cursor, document_id, user_id, annotation_id_map, show_predictions)
-    result['sourceid'] = document_id
-    result['config'] = {'entity types': get_entity_types(document_id),
-                        'relation types': get_relation_types(document_id),
+    result['relations'] = get_relations(cursor, user_document.document_id, user_document.user_id, annotation_id_map, show_predictions)
+    result['sourceid'] = user_document.document_id
+    result['config'] = {'entity types': get_entity_types(user_document.document_id),
+                        'relation types': get_relation_types(user_document.document_id),
                         'users': users}
     cursor.close()
     return result

@@ -8,8 +8,7 @@ from metapub import PubMedFetcher
 from metapub.exceptions import InvalidPMID
 
 from ltnserver import app, get_connection, respond_with
-from ltnserver.documents import create_new_user_doc_id, save_document, load_user_doc_id, load_document, \
-    get_associated_users
+from ltnserver.documents import create_new_user_doc_id, save_document, load_document, get_associated_users, Document
 from ltnserver.types import get_task_types
 
 TYPE_PLAINTEXT = 'plaintext'
@@ -51,7 +50,7 @@ def import_document():
                                                     task)
         if code == 201 and doc_type == TYPE_BIOC:
             save_document(document,
-                          load_user_doc_id(document_id, user_id),
+                          create_new_user_doc_id(document_id, user_id),
                           document_id,
                           user_id,
                           int(document.get('visibility', 1)))
@@ -235,10 +234,12 @@ def export(document_id):
 
 
 def export_document(document_id, users):
+    document = Document.by_id(document_id)
     bcollection = bioc.BioCCollection()
     for user_id in users:
-        document = load_document(document_id, user_id)
-        bdocument = create_bioc_document_from_document_json(document)
+        user_document = document.user_documents.get(user_id)
+        content = load_document(user_document)
+        bdocument = create_bioc_document_from_document_json(content)
         bcollection.add_document(bdocument)
     result = bcollection.tobioc()
     response = Response(result, mimetype='text/xml')
