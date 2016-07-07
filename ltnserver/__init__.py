@@ -23,10 +23,6 @@ context = (get_root_path('certificate.crt'), get_root_path('certificate.key'))
 connection = None
 
 
-def init():
-    try_reconnecting()
-
-
 def init_training():
     signal(SIGINT, handle_signal)
     training.init()
@@ -43,6 +39,8 @@ def reset_connection():
 
 
 def get_connection():
+    if connection is None:
+        try_reconnecting()
     return connection
 
 

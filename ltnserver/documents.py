@@ -4,6 +4,8 @@ from flask_login import current_user
 from datetime import datetime
 from collections import namedtuple
 
+from pyhdb import DatabaseError
+
 from ltnserver import app, try_reconnecting, reset_connection, get_connection, respond_with, execute_prepared
 from ltnserver.training import model_training_queue
 from ltnserver.types import get_entity_types, get_relation_types
@@ -190,14 +192,11 @@ def manage_user_documents(user_document_id):
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
 def get_document(document_id):
-    if get_connection() is None:
-        try_reconnecting()
     if request.method == 'GET':
         try:
             result = load_document(document_id, current_user.get_id())
             return respond_with(result)
-        except Exception, e:
-            print e
+        except DatabaseError:
             reset_connection()
             return 'Error while loading the document.', 500
     if request.method == 'POST':
@@ -206,8 +205,7 @@ def get_document(document_id):
             user_doc_id = load_user_doc_id(document_id, current_user.get_id())
             successful = save_document(request.get_json(), user_doc_id, document_id, current_user.get_id(),
                                        request.get_json()['task_id'])
-        except Exception, e:
-            print e
+        except DatabaseError:
             reset_connection()
         if successful:
             return ""
@@ -217,8 +215,7 @@ def get_document(document_id):
         successful = False
         try:
             successful = delete_document(document_id)
-        except Exception, e:
-            print e
+        except DatabaseError:
             reset_connection()
         if not successful:
             return 'Deletion unsuccessful.', 500
