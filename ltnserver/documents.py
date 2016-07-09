@@ -140,8 +140,8 @@ class Document:
         cursor = get_connection().cursor()
         cursor.execute('SELECT id FROM LTN_DEVELOP.USER_DOCUMENTS WHERE document_id = ?', (self.id,))
         for row in cursor.fetchall():
-            user_document_id = row[0]
-            self.user_documents[user_document_id] = UserDocument.by_id(user_document_id)
+            user_document = UserDocument.by_id(row[0])
+            self.user_documents[user_document.user_id] = user_document
 
     @classmethod
     def by_id(cls, document_id):
