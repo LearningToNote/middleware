@@ -51,6 +51,7 @@ def execute_prepared(query, params, commit=False):
     cursor.execute_prepared(ps, [params])
     if commit:
         get_connection().commit()
+    return cursor
 
 
 def try_reconnecting():

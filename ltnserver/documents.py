@@ -6,7 +6,7 @@ from collections import namedtuple
 
 from pyhdb import DatabaseError
 
-from ltnserver import app, try_reconnecting, reset_connection, get_connection, respond_with, execute_prepared
+from ltnserver import app, reset_connection, get_connection, respond_with, execute_prepared
 from ltnserver.training import model_training_queue
 from ltnserver.types import get_entity_types, get_relation_types
 from ltnserver.user import User
@@ -46,6 +46,9 @@ class UserDocument:
     def delete(self):
         UserDocument.fail_if_not_exists(self.id)
         delete_user_document(self.id)
+
+    def document(self):
+        return Document.by_id(self.document_id)
 
     @classmethod
     def by_id(cls, user_document_id):
@@ -149,7 +152,7 @@ class Document:
         cursor = get_connection().cursor()
         cursor.execute('SELECT task FROM LTN_DEVELOP.DOCUMENTS WHERE id = ?', (document_id,))
         task = cursor.fetchone()[0]
-        text = get_text(cursor, document_id)
+        text = Document.get_text_for(document_id)
         return Document(document_id, task, text)
 
     @classmethod
@@ -162,6 +165,18 @@ class Document:
     def fail_if_not_exists(cls, document_id):
         if not Document.exists(document_id):
             raise KeyError("Document '%s' does not exist.", (document_id,))
+
+    @classmethod
+    def get_text_for(cls, document_id):
+        text = None
+        params = {
+            'DOCUMENT_ID': document_id,
+            'TEXT': ''
+        }
+        result = execute_prepared('CALL LTN_DEVELOP.get_document_content (?, ?)', params).fetchone()
+        if result:
+            text = result[0].read()
+        return text
 
 
 @app.route('/user_documents_for/<document_id>')
@@ -330,7 +345,7 @@ def load_document(user_document, show_predictions=False):
     cursor = get_connection().cursor()
     result = {}
     print "Loading information for document_id: '%s' and user: '%s'" % (user_document.document_id, user_document.user_id)
-    result['text'] = get_text(cursor, user_document.document_id)
+    result['text'] = user_document.document().text
     denotations, users, annotation_id_map = get_denotations_and_users(cursor, user_document.document_id, user_document.user_id, show_predictions)
     result['denotations'] = denotations
     result['relations'] = get_relations(cursor, user_document.document_id, user_document.user_id, annotation_id_map, show_predictions)
@@ -340,25 +355,6 @@ def load_document(user_document, show_predictions=False):
                         'users': users}
     cursor.close()
     return result
-
-
-def get_text(cursor, document_id):
-    text = None
-    try:
-        sql_to_prepare = 'CALL LTN_DEVELOP.get_document_content (?, ?)'
-        params = {
-            'DOCUMENT_ID': document_id,
-            'TEXT': ''
-        }
-        psid = cursor.prepare(sql_to_prepare)
-        ps = cursor.get_prepared_statement(psid)
-        cursor.execute_prepared(ps, [params])
-        result = cursor.fetchone()
-        if result:
-            text = result[0].read()
-    except Exception, e:
-        print 'Error: ', e
-    return text
 
 
 def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
