@@ -217,26 +217,20 @@ def get_document(document_id):
             reset_connection()
             return 'Error while loading the document.', 500
     if request.method == 'POST':
-        successful = False
         try:
-            successful = save_document(request.get_json(), user_document.id, document.id, current_user.get_id(),
-                                       request.get_json()['task_id'])
+            save_document(request.get_json(), user_document.id, document.id, current_user.get_id(),
+                          request.get_json()['task_id'])
+            return "Document saved successfully.", 200
         except DatabaseError:
             reset_connection()
-        if successful:
-            return ""
-        else:
             return "An error occurred while saving the document.", 500
     if request.method == 'DELETE':
-        successful = False
         try:
-            successful = delete_document(document_id)
+            document.delete()
+            return 'Deleted.', 200
         except DatabaseError:
             reset_connection()
-        if not successful:
             return 'Deletion unsuccessful.', 500
-        else:
-            return 'Deleted.', 200
 
 
 def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
@@ -490,25 +484,6 @@ def delete_user_documents(user_document_ids):
         cursor.execute("DELETE FROM LTN_DEVELOP.ENTITIES WHERE USER_DOC_ID IN " + user_document_ids)
         cursor.execute("DELETE FROM LTN_DEVELOP.USER_DOCUMENTS WHERE ID IN " + user_document_ids)
         get_connection().commit()
-        return True
-    except Exception, e:
-        raise e
-
-
-def delete_document(document_id):
-    try:
-        cursor = get_connection().cursor()
-        cursor.execute("SELECT ID FROM LTN_DEVELOP.USER_DOCUMENTS WHERE DOCUMENT_ID = ?", (document_id,))
-        user_document_ids = map(lambda t: t[0], cursor.fetchall())
-        delete_user_documents(user_document_ids)
-
-        sql_to_prepare = 'CALL LTN_DEVELOP.delete_document (?)'
-        params = {'DOCUMENT_ID': document_id}
-        psid = cursor.prepare(sql_to_prepare)
-        ps = cursor.get_prepared_statement(psid)
-        cursor.execute_prepared(ps, [params])
-        get_connection().commit()
-
         return True
     except Exception, e:
         raise e
