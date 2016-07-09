@@ -8,11 +8,11 @@ from pyhdb import DatabaseError
 
 from ltnserver import app, reset_connection, get_connection, respond_with, execute_prepared
 from ltnserver.training import model_training_queue
-from ltnserver.types import get_entity_types, get_relation_types
+from ltnserver.types import get_entity_types, get_relation_types, TaskType
 from ltnserver.user import User
 
 Entity = namedtuple('Entity', ['id', 'user_id', 'start', 'end', 'label', 'type_id'])
-Relation = namedtuple('Relation', ['id', 'e1_id', 'e2_id', 'label', 'type_id'])
+Relation = namedtuple('Relation', ['id', 'user_id', 'e1_id', 'e2_id', 'label', 'type_id'])
 
 
 class UserDocument:
@@ -30,7 +30,7 @@ class UserDocument:
 
     def get_summary(self):
         return {'id': self.id, 'entities': len(self.entities), 'pairs': len(self.relations), 'visible': self.visible,
-                'user_id': self.user_id, 'user_name': User.get(self.user_id, get_connection().cursor()).name,
+                'user_id': self.user_id, 'user_name': User.get(self.user_id).name,
                 'from_current_user': self.user_id == current_user.get_id()}
 
     def save(self):
@@ -89,7 +89,7 @@ class UserDocument:
     def get_relations(cls, user_document_id):
         UserDocument.fail_if_not_exists(user_document_id)
         cursor = get_connection().cursor()
-        cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, TT.ID '
+        cursor.execute('SELECT P.ID, UD1.USER_ID, P.E1_ID, P.E2_ID, P.LABEL, TT.ID '
                        'FROM LTN_DEVELOP.PAIRS P '
                        'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON P.TYPE_ID = TT.ID '
                        'JOIN LTN_DEVELOP.ENTITIES E1 '
@@ -210,6 +210,8 @@ def get_document(document_id):
     user_document = document.user_documents.get(current_user.get_id())
     if request.method == 'GET':
         try:
+            if user_document is None:
+                user_document = UserDocument(None, document_id, current_user.get_id(), [], [], False)
             result = load_document(user_document)
             return respond_with(result)
         except DatabaseError:
@@ -336,12 +338,10 @@ def create_new_user_doc_id(user_id, document_id):
 
 def load_document(user_document, show_predictions=False):
     cursor = get_connection().cursor()
-    result = {}
-    print "Loading information for document_id: '%s' and user: '%s'" % (user_document.document_id, user_document.user_id)
-    result['text'] = user_document.document().text
-    denotations, users, annotation_id_map = get_denotations_and_users(cursor, user_document.document_id, user_document.user_id, show_predictions)
+    result = {'text': user_document.document().text}
+    denotations, users, annotation_id_map = get_denotations_and_users(user_document, show_predictions)
     result['denotations'] = denotations
-    result['relations'] = get_relations(cursor, user_document.document_id, user_document.user_id, annotation_id_map, show_predictions)
+    result['relations'] = get_relations(user_document, annotation_id_map, show_predictions)
     result['sourceid'] = user_document.document_id
     result['config'] = {'entity types': get_entity_types(user_document.document_id),
                         'relation types': get_relation_types(user_document.document_id),
@@ -350,38 +350,33 @@ def load_document(user_document, show_predictions=False):
     return result
 
 
-def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
+def get_denotations_and_users(user_document, show_predictions):
     from ltnserver.prediction import get_current_prediction_user
-    current_prediction_user = get_current_prediction_user(user_id, show_predictions)
-    cursor.execute('SELECT E.ID, UD.USER_ID, O."START", O."END", T.CODE, TT."LABEL", T.GROUP_ID, '
-                   'T."GROUP", E."LABEL", U."NAME", TT.ID '
-                   'FROM LTN_DEVELOP.ENTITIES E '
-                   'JOIN LTN_DEVELOP.USER_DOCUMENTS UD ON E.USER_DOC_ID = UD.ID AND UD.DOCUMENT_ID = ? '
-                   'JOIN LTN_DEVELOP.OFFSETS O ON O.ENTITY_ID = E.ID AND O.USER_DOC_ID = E.USER_DOC_ID '
-                   'LEFT OUTER JOIN LTN_DEVELOP.USERS U ON UD.USER_ID = U.ID '
-                   'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON E.TYPE_ID = TT.ID '
-                   'LEFT OUTER JOIN LTN_DEVELOP.TYPES T ON TT.TYPE_ID = T.ID '
-                   'WHERE UD.VISIBILITY = 1 OR UD.USER_ID = ? OR UD.USER_ID = ? '
-                   'ORDER BY E.ID', (document_id, user_id, current_prediction_user))
+    current_prediction_user = get_current_prediction_user(user_document.user_id, show_predictions)
+    document = user_document.document()
+    entities = []
+    for ud in document.get_user_documents():
+        if ud.visible or ud.user_id in [user_document.user_id, current_prediction_user]:
+            entities.extend(ud.entities)
     denotations = []
     increment = 1
     previous_id = None
     # todo: handle being not logged in
     colors = ['blue', 'navy', 'brown', 'chocolate', 'orange', 'maroon', 'turquoise']
-    user_id_mapping = {user_id: 0}
+    user_id_mapping = {user_document.user_id: 0}
     prediction_engine_info = {'name': 'Prediction Engine', 'color': 'gray'}
     current_user_info = {'name': 'You', 'color': '#55AA55'}
     user_info = {0: current_user_info}
     annotation_id_map = {}
     user_offset = 1
-    if current_prediction_user != user_id:
+    if current_prediction_user != user_document.user_id:
         user_info[-1] = prediction_engine_info
         user_id_mapping[current_prediction_user] = -1
         user_offset = 2
-    for result in cursor.fetchall():
+    for entity in entities:
         denotation = {}
-        current_id = str(result[0])
-        creator = str(result[1])
+        current_id = str(entity.id)
+        creator = str(entity.user_id)
         if current_id == previous_id:
             current_id += "_" + str(increment)
             increment += 1
@@ -392,67 +387,61 @@ def get_denotations_and_users(cursor, document_id, user_id, show_predictions):
             increment = 1
         if creator not in user_id_mapping and creator != current_prediction_user:
             new_id = len(user_id_mapping)
-            user_info[new_id] = {'name': str(result[9]), 'color': colors[(new_id - user_offset) % len(colors)]}
+            user_info[new_id] = {'name': str(User.get(entity.user_id).name), 'color': colors[(new_id - user_offset) % len(colors)]}
             user_id_mapping[creator] = new_id
 
+        task_type = TaskType.by_id(entity.type_id)
         # the bioc library expects all attributes to be strings (and TextAE doesn't care)
-        anno_info = {"code": str(result[4]),
-                     "name": str(result[5]),
-                     "groupId": str(result[6]),
-                     "group": str(result[7]),
-                     "label": str(result[8]),
-                     "id": str(result[10])}
+        anno_info = {"code": str(task_type.code),
+                     "name": str(task_type.name),
+                     "groupId": str(task_type.group_id),
+                     "group": str(task_type.group),
+                     "label": str(task_type.label),
+                     "id": str(task_type.task_type_id)}
         denotation['id'] = current_id
         denotation['obj'] = anno_info
         denotation['span'] = {}
-        denotation['span']['begin'] = result[2]
-        denotation['span']['end'] = result[3]
+        denotation['span']['begin'] = entity.start
+        denotation['span']['end'] = entity.end
         # necessary for split annotations
-        denotation['originalId'] = str(result[0])
+        denotation['originalId'] = str(entity.id)
         denotation['userId'] = user_id_mapping.get(creator)
         denotations.append(denotation)
-        previous_id = str(result[0])
+        previous_id = str(entity.id)
     return denotations, user_info, annotation_id_map
 
 
-def get_relations(cursor, document_id, user_id, annotation_id_map, show_predictions):
+def get_relations(user_document, annotation_id_map, show_predictions):
     from ltnserver.prediction import get_current_prediction_user
-    current_prediction_user = get_current_prediction_user(user_id, show_predictions)
-    cursor.execute('SELECT P.ID, P.E1_ID, P.E2_ID, P.LABEL, T.CODE, TT.LABEL, '
-                   'T.GROUP_ID, T."GROUP", UD1.USER_ID, TT.ID '
-                   'FROM LTN_DEVELOP.PAIRS P '
-                   'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON P.TYPE_ID = TT.ID '
-                   'JOIN LTN_DEVELOP.TYPES T ON TT.TYPE_ID = T.ID '
-                   'JOIN LTN_DEVELOP.ENTITIES E1 ON P.E1_ID = E1.ID AND P.DDI = 1 AND P.USER_DOC_ID = E1.USER_DOC_ID '
-                   'JOIN LTN_DEVELOP.ENTITIES E2 ON P.E2_ID = E2.ID AND P.DDI = 1 AND P.USER_DOC_ID = E2.USER_DOC_ID '
-                   'JOIN LTN_DEVELOP.USER_DOCUMENTS UD1 ON E1.USER_DOC_ID = UD1.ID AND UD1.DOCUMENT_ID = ? '
-                   'AND (UD1.USER_ID = ? OR UD1.USER_ID = ? OR UD1.VISIBILITY = 1) '
-                   'JOIN LTN_DEVELOP.USER_DOCUMENTS UD2 ON E2.USER_DOC_ID = UD2.ID AND UD2.DOCUMENT_ID = ? '
-                   'AND (UD2.USER_ID = ? OR UD2.USER_ID = ? OR UD2.VISIBILITY = 1)',
-                   (document_id, user_id, current_prediction_user,
-                    document_id, user_id, current_prediction_user))
+    current_prediction_user = get_current_prediction_user(user_document.user_id, show_predictions)
+    document = user_document.document()
+    annotations = []
+    for ud in document.get_user_documents():
+        if ud.visible or ud.user_id in [user_document.user_id, current_prediction_user]:
+            annotations.extend(ud.relations)
     relations = []
-    for result in cursor.fetchall():
+    for rel in annotations:
+        task_type = TaskType.by_id(rel.type_id)
         # the bioc library expects all attributes to be strings (and TextAE doesn't care)
-        type_info = {"id": str(result[9]),
-                     "code": str(result[4]),
-                     "name": str(result[5]),
-                     "groupId": str(result[6]),
-                     "group": str(result[7]),
-                     "label": str(result[3])}
+        type_info = {"id": str(rel.id),
+                     "code": str(task_type.code),
+                     "name": str(task_type.name),
+                     "groupId": str(task_type.group_id),
+                     "group": str(task_type.group),
+                     "label": str(task_type.label)}
         relation = {}
-        subj = str(result[1])
-        obj = str(result[2])
+        subj = str(rel.e1_id)
+        obj = str(rel.e2_id)
         replacement_subj = annotation_id_map.get(subj)
         replacement_obj = annotation_id_map.get(obj)
-        current_user_id = str(result[8])
+        current_user_id = str(rel.user_id)
         if replacement_subj is not None:
             if replacement_subj.get(current_user_id) is not None:
                 subj = replacement_subj.get(current_user_id)
         if replacement_obj is not None:
             if replacement_obj.get(current_user_id) is not None:
                 obj = replacement_obj.get(current_user_id)
-        relation['id'] = str(result[0])
+        relation['id'] = str(rel.id)
         relation['subj'] = subj
         relation['obj'] = obj
         relation['pred'] = type_info

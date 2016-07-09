@@ -7,7 +7,8 @@ from ltnserver import app, get_connection, try_reconnecting, reset_connection, r
 class User:
 
     @classmethod
-    def get(cls, user_id, cursor):
+    def get(cls, user_id):
+        cursor = get_connection().cursor()
         cursor.execute("SELECT id, name, token, description, image "
                        "FROM LTN_DEVELOP.Users WHERE id = ?", (user_id,))
         row = cursor.fetchone()
@@ -54,7 +55,7 @@ login_manager.init_app(app)
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.get(user_id, get_connection().cursor())
+    return User.get(user_id)
 
 
 @app.route('/login', methods=['POST'])
