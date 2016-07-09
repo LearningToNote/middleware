@@ -8,7 +8,7 @@ from metapub import PubMedFetcher
 from metapub.exceptions import InvalidPMID
 
 from ltnserver import app, get_connection, respond_with
-from ltnserver.documents import create_new_user_doc_id, save_document, load_document, get_associated_users, Document
+from ltnserver.documents import create_new_user_doc_id, save_document, load_document, Document
 from ltnserver.types import get_task_types
 
 TYPE_PLAINTEXT = 'plaintext'
@@ -225,16 +225,16 @@ def create_bioc_document_from_document_json(document):
 
 @app.route('/export/<document_id>', methods=['GET'])
 def export(document_id):
+    document = Document.by_id(document_id)
     user_id = request.args.get('user_id', None)
     if user_id is None:
-        user_ids_to_export = get_associated_users(document_id)
+        user_ids_to_export = document.get_users()
     else:
         user_ids_to_export = [user_id]
-    return export_document(document_id, user_ids_to_export)
+    return export_document(document, user_ids_to_export)
 
 
-def export_document(document_id, users):
-    document = Document.by_id(document_id)
+def export_document(document, users):
     bcollection = bioc.BioCCollection()
     for user_id in users:
         user_document = document.user_documents.get(user_id)
@@ -243,5 +243,5 @@ def export_document(document_id, users):
         bcollection.add_document(bdocument)
     result = bcollection.tobioc()
     response = Response(result, mimetype='text/xml')
-    response.headers["Content-Disposition"] = "attachment; filename=" + document_id + ".xml"
+    response.headers["Content-Disposition"] = "attachment; filename=" + document.id + ".xml"
     return response
