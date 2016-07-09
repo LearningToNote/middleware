@@ -17,12 +17,15 @@ Relation = namedtuple('Relation', ['id', 'user_id', 'e1_id', 'e2_id', 'label', '
 
 class UserDocument:
 
-    def __init__(self, user_document_id, document_id, user_id, entities, relations, visible):
+    def __init__(self, user_document_id, document_id, user_id, entities, relations, visible,
+                 created_at=datetime.now(), updated_at=datetime.now()):
         self.document_id = document_id
         self.user_id = user_id
         self.entities = entities or dict()
         self.relations = relations or dict()
         self.visible = visible
+        self.created_at = created_at
+        self.updated_at = updated_at
         if user_document_id is not None:
             self.id = user_document_id
         else:
@@ -31,17 +34,23 @@ class UserDocument:
     def get_summary(self):
         return {'id': self.id, 'entities': len(self.entities), 'pairs': len(self.relations), 'visible': self.visible,
                 'user_id': self.user_id, 'user_name': User.get(self.user_id).name,
-                'from_current_user': self.user_id == current_user.get_id()}
+                'from_current_user': self.user_id == current_user.get_id(),
+                'created_at': self.created_at, 'updated_at': self.updated_at}
 
     def save(self):
+        cursor = get_connection().cursor()
         if UserDocument.exists(self.id):
-            cursor = get_connection().cursor()
             cursor.execute("UPDATE LTN_DEVELOP.USER_DOCUMENTS "
-                           "SET visibility = ? "
-                           "WHERE id = ?", (int(self.visible), self.id))
+                           "SET visibility = ?, updated_at = ?, user_id = ? "
+                           "WHERE id = ?", (int(self.visible), datetime.now(), self.user_id, self.id))
+            # TODO: save entities and relations
             get_connection().commit()
         else:
-            pass
+            cursor.execute("INSERT INTO LTN_DEVELOPMENT.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
+                           (self.id, self.user_id, self.document_id, int(self.visible),
+                            self.created_at, self.updated_at))
+            # TODO: save entities and relations
+            get_connection().commit()
 
     def delete(self):
         UserDocument.fail_if_not_exists(self.id)
@@ -236,7 +245,8 @@ def get_document(document_id):
 def save_textae_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
     annotations = data['denotations']
     successful = True
-    create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible)
+    if not UserDocument.exists(user_doc_id):
+        UserDocument(user_doc_id, document_id, user_id, [], [], is_visible).save()
     delete_annotation_data(user_doc_id)
     print "Did load user_doc_id: " + str(user_doc_id)
     successful &= save_annotations(user_doc_id, annotations)
@@ -257,17 +267,6 @@ def save_textae_document(data, user_doc_id, document_id, user_id, task_id, is_vi
     else:
         print "did not save annotations successfully"
     return successful
-
-
-def create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible=True):
-    cursor = get_connection().cursor()
-    cursor.execute("SELECT 1 FROM LTN_DEVELOP.USER_DOCUMENTS WHERE ID = ?", (user_doc_id,))
-    result = cursor.fetchone()
-    if not result:
-        date = datetime.now()
-        cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
-                       (user_doc_id, user_id, document_id, int(is_visible), date, date))
-        get_connection().commit()
 
 
 def delete_annotation_data(user_doc_id):
