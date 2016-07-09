@@ -2,6 +2,40 @@ from flask import request
 from ltnserver import app, respond_with, get_connection
 
 
+class TaskType:
+
+    def __init__(self, task_type_id, name, group_id, group, label, code, type_id):
+        self.task_type_id = task_type_id
+        self.name = name
+        self.group_id = group_id
+        self.group = group
+        self.label = label
+        self.code = code
+        self.type_id = type_id
+
+    @classmethod
+    def by_id(cls, task_type_id):
+        TaskType.fail_if_not_exists(task_type_id)
+        cursor = get_connection().cursor()
+        cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID '
+                       'FROM LTN_DEVELOP.TYPES t '
+                       'JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID '
+                       'WHERE tt.ID = ?', (task_type_id,))
+        row = cursor.fetchone()
+        return TaskType(row[6], row[1], row[2], row[3], row[4], row[0], row[5])
+
+    @classmethod
+    def exists(cls, task_type_id):
+        cursor = get_connection().cursor()
+        cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.TASK_TYPES WHERE ID = ?", (task_type_id,))
+        return cursor.fetchone()[0] != 0
+
+    @classmethod
+    def fail_if_not_exists(cls, task_type_id):
+        if not TaskType.exists(task_type_id):
+            raise KeyError("TaskType '%s' does not exist.", (task_type_id,))
+
+
 def get_types(document_id, relation):
     cursor = get_connection().cursor()
     relation_flag = int(relation)
