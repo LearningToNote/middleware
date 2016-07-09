@@ -197,12 +197,11 @@ def save_userdoc_visibility(user_doc_id):
 
 @app.route('/user_documents/<user_document_id>', methods=['DELETE'])
 def manage_user_documents(user_document_id):
-    if request.method == 'DELETE':
-        try:
-            UserDocument.by_id(user_document_id).delete()
-            return 'Deleted.', 200
-        except KeyError:
-            return 'The user document does not exist.', 500
+    try:
+        UserDocument.by_id(user_document_id).delete()
+        return 'Deleted.', 200
+    except KeyError:
+        return 'The user document does not exist.', 500
 
 
 @app.route('/documents/<document_id>', methods=['GET', 'POST', 'DELETE'])
