@@ -212,15 +212,14 @@ def get_document(document_id):
         try:
             if user_document is None:
                 user_document = UserDocument(None, document_id, current_user.get_id(), [], [], False)
-            result = load_document(user_document)
-            return respond_with(result)
+            return respond_with(textae_document_from(user_document))
         except DatabaseError:
             reset_connection()
             return 'Error while loading the document.', 500
     if request.method == 'POST':
         try:
-            save_document(request.get_json(), user_document.id, document.id, current_user.get_id(),
-                          request.get_json()['task_id'])
+            save_textae_document(request.get_json(), user_document.id, document.id, current_user.get_id(),
+                                 request.get_json()['task_id'])
             return "Document saved successfully.", 200
         except DatabaseError:
             reset_connection()
@@ -234,7 +233,7 @@ def get_document(document_id):
             return 'Deletion unsuccessful.', 500
 
 
-def save_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
+def save_textae_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
     annotations = data['denotations']
     successful = True
     create_user_doc_if_not_existent(user_doc_id, document_id, user_id, is_visible)
@@ -336,8 +335,7 @@ def create_new_user_doc_id(user_id, document_id):
     return str(user_id) + '_' + str(document_id)
 
 
-def load_document(user_document, show_predictions=False):
-    cursor = get_connection().cursor()
+def textae_document_from(user_document, show_predictions=False):
     result = {'text': user_document.document().text}
     denotations, users, annotation_id_map = get_denotations_and_users(user_document, show_predictions)
     result['denotations'] = denotations
@@ -346,7 +344,6 @@ def load_document(user_document, show_predictions=False):
     result['config'] = {'entity types': get_entity_types(user_document.document_id),
                         'relation types': get_relation_types(user_document.document_id),
                         'users': users}
-    cursor.close()
     return result
 
 

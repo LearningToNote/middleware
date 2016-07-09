@@ -4,7 +4,7 @@ from flask import request
 from flask_login import current_user
 
 from ltnserver import app, get_connection, respond_with
-from ltnserver.documents import delete_user_document, save_document, load_document, Document, create_new_user_doc_id
+from ltnserver.documents import delete_user_document, save_textae_document, textae_document_from, Document, create_new_user_doc_id
 
 PREDICT_ENTITIES = 'entities'
 PREDICT_RELATIONS = 'relations'
@@ -38,11 +38,11 @@ def predict():
 
     document_data = json.loads(data.get('current_state', None))
     if document_data is None:
-        document_data = load_document(user_document)
+        document_data = textae_document_from(user_document)
     else:
         # the current status has to be saved first in order to disambiguate the ids of the annotations
         user_document = document.user_documents.get(current_user.get_id())
-        successful = save_document(document_data, user_document.id, document_id, current_user.get_id(), task_id)
+        successful = save_textae_document(document_data, user_document.id, document_id, current_user.get_id(), task_id)
         if not successful:
             return "Could not save the document", 500
 
@@ -56,12 +56,12 @@ def predict():
         predict_entities(document_id, task_id, prediction_user_doc_id)
     if PREDICT_RELATIONS in jobs:
         if PREDICT_ENTITIES not in jobs:
-            save_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, task_id, False)
+            save_textae_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, task_id, False)
         predicted_pairs = predict_relations(prediction_user_doc_id, task_id)
         if PREDICT_ENTITIES not in jobs:
             remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc_id)
 
-    document_data = load_document(user_document, show_predictions=True)
+    document_data = textae_document_from(user_document, show_predictions=True)
     return respond_with(document_data)
 
 
