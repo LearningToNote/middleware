@@ -12,7 +12,7 @@ from ltnserver.types import get_entity_types, get_relation_types, TaskType
 from ltnserver.user import User
 
 Entity = namedtuple('Entity', ['id', 'user_id', 'start', 'end', 'label', 'type_id'])
-Relation = namedtuple('Relation', ['id', 'user_id', 'e1_id', 'e2_id', 'label', 'type_id'])
+Relation = namedtuple('Relation', ['id', 'user_id', 'e1_id', 'e2_id', 'ddi', 'label', 'type_id'])
 
 
 class UserDocument:
@@ -37,20 +37,47 @@ class UserDocument:
                 'from_current_user': self.user_id == current_user.get_id(),
                 'created_at': self.created_at, 'updated_at': self.updated_at}
 
-    def save(self):
+    def save(self, save_annotations=True):
         cursor = get_connection().cursor()
         if UserDocument.exists(self.id):
             cursor.execute("UPDATE LTN_DEVELOP.USER_DOCUMENTS "
                            "SET visibility = ?, updated_at = ?, user_id = ? "
                            "WHERE id = ?", (int(self.visible), datetime.now(), self.user_id, self.id))
-            # TODO: save entities and relations
-            get_connection().commit()
         else:
             cursor.execute("INSERT INTO LTN_DEVELOPMENT.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
                            (self.id, self.user_id, self.document_id, int(self.visible),
                             self.created_at, self.updated_at))
-            # TODO: save entities and relations
-            get_connection().commit()
+        get_connection().commit()
+        if save_annotations:
+            self.save_entities()
+            self.save_relations()
+
+    def save_entities(self):
+        cursor = get_connection().cursor()
+        cursor.execute("DELETE FROM LTN_DEVELOP.ENTITIES WHERE USER_DOC_ID = ?", (self.id,))
+        cursor.execute("DELETE FROM LTN_DEVELOP.OFFSETS WHERE USER_DOC_ID = ?", (self.id,))
+
+        entities, offsets = list(), list()
+        for entity in self.entities:
+            entities.append((entity.id, self.id, entity.type_id, entity.label))
+            offsets.append((entity.start, entity.end, entity.id, self.id))
+
+        cursor.executemany("INSERT INTO LTN_DEVELOP.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) "
+                           "VALUES (?, ?, ?, ?)", entities)
+        cursor.executemany("INSERT INTO LTN_DEVELOP.OFFSETS VALUES (?, ?, ?, ?)", offsets)
+        get_connection().commit()
+
+    def save_relations(self):
+        cursor = get_connection().cursor()
+        cursor.execute("DELETE FROM LTN_DEVELOP.PAIRS WHERE USER_DOC_ID = ?", (self.id,))
+        relation_tuples = list()
+        for relation in self.relations:
+            if TaskType.exists(relation.type_id) and relation.e1_id and relation.e2_id:
+                relation_tuples.append((relation.e1_id, relation.e2_id, self.id,
+                                        relation.ddi, relation.type_id, relation.label))
+        cursor.executemany("INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) "
+                           "VALUES (?, ?, ?, ?, ?, ?)", relation_tuples)
+        get_connection().commit()
 
     def delete(self):
         UserDocument.fail_if_not_exists(self.id)
@@ -98,7 +125,7 @@ class UserDocument:
     def get_relations(cls, user_document_id):
         UserDocument.fail_if_not_exists(user_document_id)
         cursor = get_connection().cursor()
-        cursor.execute('SELECT P.ID, UD1.USER_ID, P.E1_ID, P.E2_ID, P.LABEL, TT.ID '
+        cursor.execute('SELECT P.ID, UD1.USER_ID, P.E1_ID, P.E2_ID, P.DDI, P.LABEL, TT.ID '
                        'FROM LTN_DEVELOP.PAIRS P '
                        'LEFT OUTER JOIN LTN_DEVELOP.TASK_TYPES TT ON P.TYPE_ID = TT.ID '
                        'JOIN LTN_DEVELOP.ENTITIES E1 '
@@ -200,7 +227,7 @@ def get_document_details(document_id):
 def save_userdoc_visibility(user_doc_id):
     user_document = UserDocument.by_id(user_doc_id)
     user_document.visible = request.get_json()['visible']
-    user_document.save()
+    user_document.save(save_annotations=False)
     return "OK", 200
 
 
@@ -243,91 +270,54 @@ def get_document(document_id):
 
 
 def save_textae_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
-    annotations = data['denotations']
-    successful = True
     if not UserDocument.exists(user_doc_id):
-        UserDocument(user_doc_id, document_id, user_id, [], [], is_visible).save()
-    delete_annotation_data(user_doc_id)
-    print "Did load user_doc_id: " + str(user_doc_id)
-    successful &= save_annotations(user_doc_id, annotations)
-    if successful:
-        print "saved annotations successfully"
-        id_map = {}
-        # necessary, as TextAE does not create "originalId"s
-        for annotation in annotations:
-            if annotation.get('userId', 0) == 0:
-                id_map[annotation['id']] = annotation.get('originalId', annotation['id'])
-        print "saving relations"
-        successful &= save_relations(user_doc_id, data['relations'], id_map)
-        if successful:
-            print "saved relations successfully"
-            model_training_queue.add(task_id)
-        else:
-            print "did not save relations successfully"
+        user_document = UserDocument(user_doc_id, document_id, user_id, [], [], is_visible)
+        user_document.save(save_annotations=False)
+        print "Created new UserDocument"
     else:
-        print "did not save annotations successfully"
-    return successful
+        user_document = UserDocument.by_id(user_doc_id)
+        print "Used existing UserDocument"
 
-
-def delete_annotation_data(user_doc_id):
-    cursor = get_connection().cursor()
-    print "Deleting old information for " + str(user_doc_id) + "..."
-    print "Deleting existing pairs..."
-    cursor.execute("DELETE FROM LTN_DEVELOP.PAIRS WHERE USER_DOC_ID = ?", (user_doc_id,))
-    get_connection().commit()
-    print "Deleting existing offsets..."
-    cursor.execute("DELETE FROM LTN_DEVELOP.OFFSETS WHERE USER_DOC_ID = ?", (user_doc_id,))
-    get_connection().commit()
-    print "Deleting existing annotations..."
-    cursor.execute("DELETE FROM LTN_DEVELOP.ENTITIES WHERE USER_DOC_ID = ?", (user_doc_id,))
-    get_connection().commit()
-
-
-def convert_annotation(annotation, user_doc_id):
-    return (annotation.get('originalId',
-                           annotation['id']),
-            user_doc_id,
-            annotation['obj'].get('id'),
-            annotation['obj'].get('label', None))
-
-
-def convert_offset(annotation, user_doc_id):
-    return (annotation['span']['begin'], annotation['span']['end'],
-            annotation.get('originalId', annotation['id']), user_doc_id)
-
-
-def save_annotations(user_doc_id, annotations):
     # only save annotations from the current user, defined as userId 0 at loading time
-    filtered_annotations = filter(lambda annotation: annotation.get('userId', 0) == 0, annotations)
-    if not user_doc_id:
-        return False
-    print "inserting new annotations..."
-    annotation_tuples = map(lambda annotation: convert_annotation(annotation, user_doc_id), filtered_annotations)
-    cursor = get_connection().cursor()
-    cursor.executemany("INSERT INTO LTN_DEVELOP.ENTITIES (ID, USER_DOC_ID, TYPE_ID, LABEL) "
-                       "VALUES (?, ?, ?, ?)", annotation_tuples)
-    print "inserting new offsets..."
-    offset_tuples = map(lambda annotation: convert_offset(annotation, user_doc_id), filtered_annotations)
-    cursor.executemany("INSERT INTO LTN_DEVELOP.OFFSETS VALUES (?, ?, ?, ?)", offset_tuples)
-    get_connection().commit()
+    annotations = filter(lambda a: a.get('userId', 0) == 0, data['denotations'])
+    save_annotations(user_document, annotations)
+    id_map = {}
+    # necessary, as TextAE does not create "originalId"s
+    for annotation in annotations:
+        id_map[annotation.get('id')] = annotation.get('originalId', annotation.get('id'))
+
+    save_relations(user_document, data['relations'], id_map)
+    model_training_queue.add(task_id)
     return True
 
 
-def save_relations(user_doc_id, relations, id_map):
-    relation_tuples = list()
+def save_annotations(user_document, annotations):
+    entities = list()
+    for annotation in annotations:
+        entities.append(Entity(annotation.get('originalId', annotation.get('id')),
+                               user_document.user_id,
+                               annotation['span']['begin'],
+                               annotation['span']['end'],
+                               annotation['obj']['label'],
+                               annotation['obj']['id']))
+    user_document.entities = entities
+    user_document.save_entities()
+
+
+def save_relations(user_document, relations, id_map):
+    new_relations = list()
     for relation in relations:
-        if id_map.get(relation['subj']) is not None and id_map.get(relation['obj']) is not None:
-            relation_tuples.append((id_map[relation['subj']],
-                                    id_map[relation['obj']],
-                                    user_doc_id, 1,
-                                    relation['pred'].get('id'),
-                                    relation['pred'].get('label', None)))
-
-    cursor = get_connection().cursor()
-    cursor.executemany("INSERT INTO LTN_DEVELOP.PAIRS (E1_ID, E2_ID, USER_DOC_ID, DDI, TYPE_ID, LABEL) "
-                       "VALUES (?, ?, ?, ?, ?, ?)", relation_tuples)
-    get_connection().commit()
-    return True
+        r_subject, r_predicate, r_object = relation.get('subj'), relation.get('pred'), relation.get('obj')
+        if id_map.get(r_subject) is not None and id_map.get(r_object) is not None:
+            new_relations.append(Relation(relation.get('id'),
+                                          user_document.user_id,
+                                          id_map.get(r_subject),
+                                          id_map.get(r_object),
+                                          True,
+                                          r_predicate.get('label', None),
+                                          r_predicate.get('id')))
+    user_document.relations = new_relations
+    user_document.save_relations()
 
 
 def create_new_user_doc_id(user_id, document_id):
@@ -419,7 +409,7 @@ def get_relations(user_document, annotation_id_map, show_predictions):
     for rel in annotations:
         task_type = TaskType.by_id(rel.type_id)
         # the bioc library expects all attributes to be strings (and TextAE doesn't care)
-        type_info = {"id": str(rel.id),
+        type_info = {"id": str(task_type.task_type_id),
                      "code": str(task_type.code),
                      "name": str(task_type.name),
                      "groupId": str(task_type.group_id),
