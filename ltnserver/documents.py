@@ -35,7 +35,7 @@ class UserDocument:
         return {'id': self.id, 'entities': len(self.entities), 'pairs': len(self.relations), 'visible': self.visible,
                 'user_id': self.user_id, 'user_name': User.get(self.user_id).name,
                 'from_current_user': self.user_id == current_user.get_id(),
-                'created_at': self.created_at, 'updated_at': self.updated_at}
+                'created_at': str(self.created_at), 'updated_at': str(self.updated_at)}
 
     def save(self, save_annotations=True):
         cursor = get_connection().cursor()
