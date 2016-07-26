@@ -7,9 +7,9 @@ from flask_login import current_user
 from metapub import PubMedFetcher
 from metapub.exceptions import InvalidPMID
 
-from ltnserver import app, get_connection, respond_with
-from ltnserver.documents import create_new_user_doc_id, save_textae_document, textae_document_from, Document
-from ltnserver.types import get_task_types
+from ltnserver import app, get_connection, respond_with, execute_prepared
+from ltnserver.documents import create_new_user_doc_id, save_textae_document, Document
+from ltnserver.types import get_task_types, TaskType
 
 TYPE_PLAINTEXT = 'plaintext'
 TYPE_BIOC = 'bioc'
@@ -166,22 +166,41 @@ def create_document_in_database(document_id, document_text, document_visibility,
     if result[0] != 0:
         return "A document with the ID '%s' already exists" % (document_id,), 409
 
-    sql_to_prepare = 'CALL LTN_DEVELOP.add_document (?, ?, ?)'
     params = {
         'DOCUMENT_ID': document_id,
         'DOCUMENT_TEXT': document_text.replace("'", "''"),
         'TASK': task
     }
-    psid = cursor.prepare(sql_to_prepare)
-    ps = cursor.get_prepared_statement(psid)
-    cursor.execute_prepared(ps, [params])
-    get_connection().commit()
+    execute_prepared('CALL LTN_DEVELOP.add_document (?, ?, ?)', params, commit=True)
 
     cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
                    (create_new_user_doc_id(current_user.get_id(), document_id), current_user.get_id(), document_id,
                     document_visibility, datetime.now(), datetime.now()))
     get_connection().commit()
     return "Successfully imported", 201
+
+
+@app.route('/export/<document_id>', methods=['GET'])
+def export(document_id):
+    document = Document.by_id(document_id)
+    user_id = request.args.get('user_id', None)
+    if user_id is None:
+        user_ids_to_export = document.get_users()
+    else:
+        user_ids_to_export = [user_id]
+    return export_document(document, user_ids_to_export)
+
+
+def export_document(document, users):
+    bcollection = bioc.BioCCollection()
+    for user_id in users:
+        user_document = document.user_documents.get(user_id)
+        bdocument = create_bioc_document_from(user_document)
+        bcollection.add_document(bdocument)
+    result = bcollection.tobioc()
+    response = Response(result, mimetype='text/xml')
+    response.headers["Content-Disposition"] = "attachment; filename=" + document.id + ".xml"
+    return response
 
 
 def create_bioc_document_from(user_document):
@@ -207,9 +226,11 @@ def create_bioc_annotation_from(entity):
     annotation = bioc.BioCAnnotation()
     annotation.id = str(entity.id)
     annotation.add_location(bioc.BioCLocation(entity.start, entity.end - entity.start))
+    type = TaskType.by_id(entity.type_id)
     annotation.infons = {
         "user": str(entity.user_id),
-        "type": str(entity.type_id),
+        "type": str(type.task_type_id),
+        "umls": str(type.code),
         "label": str(entity.label)
     }
     return annotation
@@ -220,33 +241,12 @@ def create_bioc_relation_from(pair):
     relation.id = str(pair.id)
     relation.add_node(bioc.BioCNode(str(pair.e1_id), ''))
     relation.add_node(bioc.BioCNode(str(pair.e2_id), ''))
+    type = TaskType.by_id(pair.type_id)
     relation.infons = {
         "user": str(pair.user_id),
-        "type": str(pair.type_id),
+        "type": str(type.task_type_id),
+        "umls": str(type.code),
         "label": str(pair.label),
         "ddi": str(pair.ddi)
     }
     return relation
-
-
-@app.route('/export/<document_id>', methods=['GET'])
-def export(document_id):
-    document = Document.by_id(document_id)
-    user_id = request.args.get('user_id', None)
-    if user_id is None:
-        user_ids_to_export = document.get_users()
-    else:
-        user_ids_to_export = [user_id]
-    return export_document(document, user_ids_to_export)
-
-
-def export_document(document, users):
-    bcollection = bioc.BioCCollection()
-    for user_id in users:
-        user_document = document.user_documents.get(user_id)
-        bdocument = create_bioc_document_from(user_document)
-        bcollection.add_document(bdocument)
-    result = bcollection.tobioc()
-    response = Response(result, mimetype='text/xml')
-    response.headers["Content-Disposition"] = "attachment; filename=" + document.id + ".xml"
-    return response
