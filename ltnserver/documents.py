@@ -44,7 +44,7 @@ class UserDocument:
                            "SET visibility = ?, updated_at = ?, user_id = ? "
                            "WHERE id = ?", (int(self.visible), datetime.now(), self.user_id, self.id))
         else:
-            cursor.execute("INSERT INTO LTN_DEVELOPMENT.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
+            cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
                            (self.id, self.user_id, self.document_id, int(self.visible),
                             self.created_at, self.updated_at))
         get_connection().commit()
