@@ -270,13 +270,13 @@ def get_document(document_id):
 
 
 def save_textae_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
-    if not UserDocument.exists(user_doc_id):
+    try:
+        user_document = UserDocument.by_id(user_doc_id)
+        print "Used existing UserDocument"
+    except KeyError:
         user_document = UserDocument(user_doc_id, document_id, user_id, [], [], is_visible)
         user_document.save(save_annotations=False)
         print "Created new UserDocument"
-    else:
-        user_document = UserDocument.by_id(user_doc_id)
-        print "Used existing UserDocument"
 
     # only save annotations from the current user, defined as userId 0 at loading time
     annotations = filter(lambda a: a.get('userId', 0) == 0, data['denotations'])
