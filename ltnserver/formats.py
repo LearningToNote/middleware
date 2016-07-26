@@ -184,43 +184,49 @@ def create_document_in_database(document_id, document_text, document_visibility,
     return "Successfully imported", 201
 
 
-def create_bioc_document_from_document_json(document):
+def create_bioc_document_from(user_document):
     b_document = bioc.BioCDocument()
-    b_document.id = document['sourceid']
-    passage = bioc.BioCPassage()
-    passage.text = document['text']
-    passage.offset = 0
-    annotation_user_map = {}
-    for denotation in document['denotations']:
-        annotation_user_map[denotation['id']] = denotation['userId']
-        if denotation['userId'] != 0:
-            continue
-        annotation = bioc.BioCAnnotation()
-        annotation.id = denotation['id']
-        location = bioc.BioCLocation(0, 0)
-        location.offset = denotation['span']['begin']
-        location.length = denotation['span']['end'] - denotation['span']['begin']
-        annotation.locations.append(location)
-        annotation.text = document['text'][denotation['span']['begin']:denotation['span']['end']]
-        annotation.infons = denotation['obj']
-        passage.add_annotation(annotation)
-    for relation in document['relations']:
-        subj_from_current_user = annotation_user_map[relation['subj']] == 0
-        obj_from_current_user = annotation_user_map[relation['obj']] == 0
-        if not (subj_from_current_user and obj_from_current_user):
-            continue
-        b_relation = bioc.BioCRelation()
-        b_relation.id = relation['id']
-        start_node = bioc.BioCNode('', '')
-        end_node = bioc.BioCNode('', '')
-        start_node.refid = relation['subj']
-        end_node.refid = relation['obj']
-        b_relation.add_node(start_node)
-        b_relation.add_node(end_node)
-        b_relation.infons = relation['pred']
-        passage.add_relation(b_relation)
+    b_document.id = str(user_document.id)
+    passage = create_bioc_passage_from(user_document)
     b_document.add_passage(passage)
     return b_document
+
+
+def create_bioc_passage_from(user_document):
+    passage = bioc.BioCPassage()
+    passage.text = user_document.document().text
+    passage.offset = 0
+    for entity in user_document.entities:
+        passage.add_annotation(create_bioc_annotation_from(entity))
+    for relation in user_document.relations:
+        passage.add_relation(create_bioc_relation_from(relation))
+    return passage
+
+
+def create_bioc_annotation_from(entity):
+    annotation = bioc.BioCAnnotation()
+    annotation.id = str(entity.id)
+    annotation.add_location(bioc.BioCLocation(entity.start, entity.end - entity.start))
+    annotation.infons = {
+        "user": str(entity.user_id),
+        "type": str(entity.type_id),
+        "label": str(entity.label)
+    }
+    return annotation
+
+
+def create_bioc_relation_from(pair):
+    relation = bioc.BioCRelation()
+    relation.id = str(pair.id)
+    relation.add_node(bioc.BioCNode(str(pair.e1_id), ''))
+    relation.add_node(bioc.BioCNode(str(pair.e2_id), ''))
+    relation.infons = {
+        "user": str(pair.user_id),
+        "type": str(pair.type_id),
+        "label": str(pair.label),
+        "ddi": str(pair.ddi)
+    }
+    return relation
 
 
 @app.route('/export/<document_id>', methods=['GET'])
@@ -238,8 +244,7 @@ def export_document(document, users):
     bcollection = bioc.BioCCollection()
     for user_id in users:
         user_document = document.user_documents.get(user_id)
-        content = textae_document_from(user_document)
-        bdocument = create_bioc_document_from_document_json(content)
+        bdocument = create_bioc_document_from(user_document)
         bcollection.add_document(bdocument)
     result = bcollection.tobioc()
     response = Response(result, mimetype='text/xml')
