@@ -21,8 +21,8 @@ class UserDocument:
                  created_at=datetime.now(), updated_at=datetime.now()):
         self.document_id = document_id
         self.user_id = user_id
-        self.entities = entities or dict()
-        self.relations = relations or dict()
+        self.entities = entities or list()
+        self.relations = relations or list()
         self.visible = visible
         self.created_at = created_at
         self.updated_at = updated_at
