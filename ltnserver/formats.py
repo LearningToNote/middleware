@@ -1,14 +1,14 @@
 import StringIO
-from datetime import datetime
 
 import bioc
 from flask import request, Response
 from flask_login import current_user
 from metapub import PubMedFetcher
 from metapub.exceptions import InvalidPMID
+from pyhdb import DatabaseError
 
-from ltnserver import app, get_connection, respond_with, execute_prepared
-from ltnserver.documents import create_new_user_doc_id, save_textae_document, Document
+from ltnserver import app, respond_with
+from ltnserver.documents import create_new_user_doc_id, save_textae_document, Document, UserDocument
 from ltnserver.types import get_task_types, TaskType
 
 TYPE_PLAINTEXT = 'plaintext'
@@ -160,24 +160,16 @@ def extract_relations_from_bioc_object(bioc_object, task, id_prefix, denotations
 
 
 def create_document_in_database(document_id, document_text, document_visibility, task):
-    cursor = get_connection().cursor()
-    cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.DOCUMENTS WHERE ID = ?", (document_id,))
-    result = cursor.fetchone()
-    if result[0] != 0:
+    document = Document(document_id, task, document_text)
+    try:
+        document.save()
+        user_document = UserDocument(None, document_id, current_user.get_id(), None, None, document_visibility)
+        user_document.save(save_annotations=False)
+        return "Successfully imported", 201
+    except NotImplementedError:
         return "A document with the ID '%s' already exists" % (document_id,), 409
-
-    params = {
-        'DOCUMENT_ID': document_id,
-        'DOCUMENT_TEXT': document_text.replace("'", "''"),
-        'TASK': task
-    }
-    execute_prepared('CALL LTN_DEVELOP.add_document (?, ?, ?)', params, commit=True)
-
-    cursor.execute("INSERT INTO LTN_DEVELOP.USER_DOCUMENTS VALUES (?, ?, ?, ?, ?, ?)",
-                   (create_new_user_doc_id(current_user.get_id(), document_id), current_user.get_id(), document_id,
-                    document_visibility, datetime.now(), datetime.now()))
-    get_connection().commit()
-    return "Successfully imported", 201
+    except DatabaseError, e:
+        return "Database Error: '%s'" % (e.message,), 500
 
 
 @app.route('/export/<document_id>', methods=['GET'])
