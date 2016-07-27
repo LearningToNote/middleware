@@ -49,11 +49,8 @@ def import_document():
                                                     int(document.get('visibility', 1)),
                                                     task)
         if code == 201 and doc_type == TYPE_BIOC:
-            save_textae_document(document,
-                                 create_new_user_doc_id(user_id, document_id),
-                                 document_id,
-                                 user_id,
-                                 int(document.get('visibility', 1)))
+            save_textae_document(UserDocument(None, document_id, user_id, [], [], int(document.get('visibility', 0))),
+                                 document)
         if code != 201:
             return message, code
 

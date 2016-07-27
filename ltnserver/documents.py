@@ -254,8 +254,9 @@ def get_document(document_id):
             return 'Error while loading the document.', 500
     if request.method == 'POST':
         try:
-            save_textae_document(request.get_json(), user_document.id, document.id, current_user.get_id(),
-                                 request.get_json()['task_id'])
+            document_data = request.get_json()
+            task_id = document_data.get("task_id")
+            save_textae_document(user_document, document_data)
             return "Document saved successfully.", 200
         except DatabaseError:
             reset_connection()
@@ -269,15 +270,7 @@ def get_document(document_id):
             return 'Deletion unsuccessful.', 500
 
 
-def save_textae_document(data, user_doc_id, document_id, user_id, task_id, is_visible=True):
-    try:
-        user_document = UserDocument.by_id(user_doc_id)
-        print "Used existing UserDocument"
-    except KeyError:
-        user_document = UserDocument(user_doc_id, document_id, user_id, [], [], is_visible)
-        user_document.save(save_annotations=False)
-        print "Created new UserDocument"
-
+def save_textae_document(user_document, data):
     # only save annotations from the current user, defined as userId 0 at loading time
     annotations = filter(lambda a: a.get('userId', 0) == 0, data['denotations'])
     save_annotations(user_document, annotations)
@@ -287,7 +280,7 @@ def save_textae_document(data, user_doc_id, document_id, user_id, task_id, is_vi
         id_map[annotation.get('id')] = annotation.get('originalId', annotation.get('id'))
 
     save_relations(user_document, data['relations'], id_map)
-    model_training_queue.add(task_id)
+    model_training_queue.add(user_document.document().task)
     return True
 
 

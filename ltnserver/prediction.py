@@ -3,7 +3,7 @@ import json
 from flask import request
 from flask_login import current_user
 
-from ltnserver import app, get_connection, respond_with
+from ltnserver import app, get_connection, respond_with, execute_prepared
 from ltnserver.documents import delete_user_document, save_textae_document, textae_document_from, Document, create_new_user_doc_id, \
     UserDocument
 
@@ -43,21 +43,16 @@ def predict():
     else:
         # the current status has to be saved first in order to disambiguate the ids of the annotations
         user_document = document.user_documents.get(current_user.get_id(), UserDocument(None, document_id, current_user.get_id(), [], [], True))
-        successful = save_textae_document(document_data, user_document.id, document_id, current_user.get_id(), task_id)
+        successful = save_textae_document(user_document, document_data)
         if not successful:
             return "Could not save the document", 500
 
     if PREDICT_ENTITIES in jobs:
-        cursor = get_connection().cursor()
-        cursor.execute('INSERT INTO "LTN_DEVELOP"."USER_DOCUMENTS" '
-                       'VALUES (?, ?, ?, 0, current_timestamp, current_timestamp)',
-                       (prediction_user_doc.id, current_prediction_user, document_id,))
-        cursor.close()
-        get_connection().commit()
+        prediction_user_doc.save(save_annotations=False)
         predict_entities(document_id, task_id, prediction_user_doc.id)
     if PREDICT_RELATIONS in jobs:
         if PREDICT_ENTITIES not in jobs:
-            save_textae_document(document_data, prediction_user_doc.id, document_id, current_prediction_user, task_id, False)
+            save_textae_document(prediction_user_doc, document_data)
         predicted_pairs = predict_relations(prediction_user_doc.id, task_id)
         if PREDICT_ENTITIES not in jobs:
             remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc.id)
@@ -124,16 +119,9 @@ def predict_entities(document_id, task_id, target_user_document_id):
 
 
 def predict_relations(user_document_id, task_id):
-    cursor = get_connection().cursor()
-
-    sql_to_prepare = 'CALL LTN_DEVELOP.PREDICT_UD (?, ?, ?)'
-    params = {'UD_ID': user_document_id,
-              'TASK_ID': str(task_id)}
-    psid = cursor.prepare(sql_to_prepare)
-    ps = cursor.get_prepared_statement(psid)
-    cursor.execute_prepared(ps, [params])
+    cursor = execute_prepared('CALL LTN_DEVELOP.PREDICT_UD (?, ?, ?)',
+                              {'UD_ID': user_document_id, 'TASK_ID': str(task_id)})
     pairs = cursor.fetchall()
-
     return store_predicted_relations(pairs, user_document_id)
 
 
