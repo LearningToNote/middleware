@@ -4,7 +4,8 @@ from flask import request
 from flask_login import current_user
 
 from ltnserver import app, get_connection, respond_with
-from ltnserver.documents import delete_user_document, save_textae_document, textae_document_from, Document, create_new_user_doc_id
+from ltnserver.documents import delete_user_document, save_textae_document, textae_document_from, Document, create_new_user_doc_id, \
+    UserDocument
 
 PREDICT_ENTITIES = 'entities'
 PREDICT_RELATIONS = 'relations'
@@ -30,8 +31,8 @@ def predict():
     document = Document.by_id(document_id)
     user_id = data.get('user_id', current_user.get_id())
     current_prediction_user = prediction_user_for_user(user_id)
-    prediction_user_doc_id = document.user_documents.get(current_prediction_user, None) or create_new_user_doc_id(document.id, current_prediction_user)
-    delete_user_document(prediction_user_doc_id)
+    prediction_user_doc = document.user_documents.get(current_prediction_user, UserDocument(None, document_id, current_prediction_user, [], [], True))
+    delete_user_document(prediction_user_doc.id)
 
     document = Document.by_id(document_id)
     user_document = document.user_documents.get(user_id)
@@ -41,7 +42,7 @@ def predict():
         document_data = textae_document_from(user_document)
     else:
         # the current status has to be saved first in order to disambiguate the ids of the annotations
-        user_document = document.user_documents.get(current_user.get_id())
+        user_document = document.user_documents.get(current_user.get_id(), UserDocument(None, document_id, current_user.get_id(), [], [], True))
         successful = save_textae_document(document_data, user_document.id, document_id, current_user.get_id(), task_id)
         if not successful:
             return "Could not save the document", 500
@@ -50,16 +51,16 @@ def predict():
         cursor = get_connection().cursor()
         cursor.execute('INSERT INTO "LTN_DEVELOP"."USER_DOCUMENTS" '
                        'VALUES (?, ?, ?, 0, current_timestamp, current_timestamp)',
-                       (prediction_user_doc_id, current_prediction_user, document_id,))
+                       (prediction_user_doc.id, current_prediction_user, document_id,))
         cursor.close()
         get_connection().commit()
-        predict_entities(document_id, task_id, prediction_user_doc_id)
+        predict_entities(document_id, task_id, prediction_user_doc.id)
     if PREDICT_RELATIONS in jobs:
         if PREDICT_ENTITIES not in jobs:
-            save_textae_document(document_data, prediction_user_doc_id, document_id, current_prediction_user, task_id, False)
-        predicted_pairs = predict_relations(prediction_user_doc_id, task_id)
+            save_textae_document(document_data, prediction_user_doc.id, document_id, current_prediction_user, task_id, False)
+        predicted_pairs = predict_relations(prediction_user_doc.id, task_id)
         if PREDICT_ENTITIES not in jobs:
-            remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc_id)
+            remove_entities_without_relations(predicted_pairs, document_data, prediction_user_doc.id)
 
     document_data = textae_document_from(user_document, show_predictions=True)
     return respond_with(document_data)
