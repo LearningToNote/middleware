@@ -106,7 +106,7 @@ class UserDocument:
     @classmethod
     def fail_if_not_exists(cls, user_document_id):
         if not UserDocument.exists(user_document_id):
-            raise KeyError("UserDocument '%s' does not exist.", (user_document_id,))
+            raise KeyError("UserDocument '%s' does not exist." % (user_document_id,))
 
     @classmethod
     def get_entities(cls, user_document_id):
@@ -200,7 +200,7 @@ class Document:
     @classmethod
     def fail_if_not_exists(cls, document_id):
         if not Document.exists(document_id):
-            raise KeyError("Document '%s' does not exist.", (document_id,))
+            raise KeyError("Document '%s' does not exist." % (document_id,))
 
     @classmethod
     def get_text_for(cls, document_id):

@@ -33,7 +33,7 @@ class TaskType:
     @classmethod
     def fail_if_not_exists(cls, task_type_id):
         if not TaskType.exists(task_type_id):
-            raise KeyError("TaskType '%s' does not exist.", (task_type_id,))
+            raise KeyError("TaskType '%s' does not exist." % (task_type_id,))
 
 
 def get_types(document_id, relation):
