@@ -106,6 +106,7 @@ def extract_documents_from_bioc(bioc_text, id_prefix, task):
 def extract_denotations_from_bioc_object(bioc_object, task, id_prefix):
     denotations = []
     known_types = dict((t['code'], t) for t in get_task_types(task, relation=False))
+    unknown_types = dict()
     for annotation in bioc_object.annotations:
         denotation = {'id': id_prefix + annotation.id, 'span': {}}
         denotation['span']['begin'] = annotation.locations[0].offset
@@ -121,15 +122,22 @@ def extract_denotations_from_bioc_object(bioc_object, task, id_prefix):
                 lambda x: x[0] in ['label', 'type'] or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
                 annotation.infons.iteritems())
             if len(label_guesses) > 0:
-                denotation['obj'] = {'label': label_guesses[0][1]}
+                label = label_guesses[0][1]
+                if label in unknown_types:
+                    new_type = unknown_types.get(label)
+                else:
+                    new_type = TaskType(TaskType.GENERATE_NEW_ID, None, None, None, label, None, None, task)
+                    new_type.save()
+                    unknown_types[label] = new_type
+                denotation['obj'] = {'label': label, 'id': new_type.task_type_id}
         denotations.append(denotation)
-
     return denotations
 
 
 def extract_relations_from_bioc_object(bioc_object, task, id_prefix, denotations):
     relations = []
     known_types = dict((t['code'], t) for t in get_task_types(task, relation=True))
+    unknown_types = dict()
     for b_relation in bioc_object.relations:
         nodes = list(b_relation.nodes)
         subj_id = denotations.get(nodes[0].refid, None)
@@ -151,7 +159,14 @@ def extract_relations_from_bioc_object(bioc_object, task, id_prefix, denotations
                     lambda x: x[0] in ['label', 'type'] or (x[1] != 'None' and x[1] is not None and x[1] != 'undefined'),
                     b_relation.infons.iteritems())
                 if len(label_guesses) > 0:
-                    relation['pred'] = {'label': label_guesses[0][1]}
+                    label = label_guesses[0][1]
+                    if label in unknown_types:
+                        new_type = unknown_types.get(label)
+                    else:
+                        new_type = TaskType(TaskType.GENERATE_NEW_ID, None, None, None, label, None, None, task, True)
+                        new_type.save()
+                        unknown_types[label] = new_type
+                    relation['pred'] = {'label': label, 'id': new_type.task_type_id}
             relations.append(relation)
     return relations
 

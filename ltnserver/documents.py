@@ -35,6 +35,7 @@ class UserDocument:
         return {'id': self.id, 'entities': len(self.entities), 'pairs': len(self.relations), 'visible': self.visible,
                 'user_id': self.user_id, 'user_name': User.get(self.user_id).name,
                 'from_current_user': self.user_id == current_user.get_id(),
+                'unspecified_types': UserDocument.get_unspecified_types(self.id),
                 'created_at': str(self.created_at), 'updated_at': str(self.updated_at)}
 
     def save(self, save_annotations=True):
@@ -137,6 +138,16 @@ class UserDocument:
                        'WHERE UD1.ID = ?', (user_document_id,))
         return [Relation(*t) for t in cursor.fetchall()]
 
+    @classmethod
+    def get_unspecified_types(cls, user_document_id):
+        UserDocument.fail_if_not_exists(user_document_id)
+        cursor = get_connection().cursor()
+        cursor.execute('SELECT tt.id, tt.label, tt.task_id, tt.relation '
+                       'FROM LTN_DEVELOP.TASK_TYPES tt '
+                       'JOIN LTN_DEVELOP.ENTITIES e ON tt.id = e.type_id '
+                       'WHERE e.user_doc_id = ? AND tt.type_id IS NULL', (user_document_id,))
+        return [TaskType(t[0], None, None, None, t[1], None, None, t[2], t[3]) for t in cursor.fetchall()]
+
 
 class Document:
 
@@ -214,6 +225,17 @@ class Document:
             text = result[0].read()
         return text
 
+    @classmethod
+    def get_unspecified_types(cls, document_id):
+        Document.fail_if_not_exists(document_id)
+        cursor = get_connection().cursor()
+        cursor.execute('SELECT tt.id, tt.label, tt.task_id, tt.relation '
+                       'FROM LTN_DEVELOP.TASK_TYPES tt '
+                       'JOIN LTN_DEVELOP.ENTITIES e ON tt.id = e.type_id '
+                       'JOIN LTN_DEVELOP.USER_DOCUMENTS ud ON ud.id = e.user_doc_id '
+                       'WHERE ud.document_id = ? AND tt.type_id IS NULL', (document_id,))
+        return [TaskType(t[0], None, None, None, t[1], None, None, t[2], t[3]) for t in cursor.fetchall()]
+
 
 @app.route('/user_documents_for/<document_id>')
 def get_document_details(document_id):
@@ -270,6 +292,11 @@ def get_document(document_id):
             return 'Deletion unsuccessful.', 500
 
 
+@app.route('/documents/<document_id>/check')
+def check_document_and_provide_edit_link(document_id):
+    return respond_with([t.__dict__ for t in Document.get_unspecified_types(document_id)])
+
+
 def save_textae_document(user_document, data):
     # only save annotations from the current user, defined as userId 0 at loading time
     annotations = filter(lambda a: a.get('userId', 0) == 0, data['denotations'])
@@ -287,12 +314,14 @@ def save_textae_document(user_document, data):
 def save_annotations(user_document, annotations):
     entities = list()
     for annotation in annotations:
+        span = annotation.get('span', {'begin': None, 'end': None})
+        annotation_type = annotation.get('obj', {'label': None, 'id': None})
         entities.append(Entity(annotation.get('originalId', annotation.get('id')),
                                user_document.user_id,
-                               annotation['span']['begin'],
-                               annotation['span']['end'],
-                               annotation['obj']['label'],
-                               annotation['obj']['id']))
+                               span.get('begin'),
+                               span.get('end'),
+                               annotation_type.get('label'),
+                               annotation_type.get('id')))
     user_document.entities = entities
     user_document.save_entities()
 
@@ -308,7 +337,7 @@ def save_relations(user_document, relations, id_map):
                                           id_map.get(r_object),
                                           True,
                                           r_predicate.get('label', None),
-                                          r_predicate.get('id')))
+                                          r_predicate.get('id', None)))
     user_document.relations = new_relations
     user_document.save_relations()
 
