@@ -4,28 +4,55 @@ from ltnserver import app, respond_with, get_connection
 
 class TaskType:
 
-    def __init__(self, task_type_id, name, group_id, group, label, code, type_id):
-        self.task_type_id = task_type_id
+    GENERATE_NEW_ID = -1
+
+    def __init__(self, task_type_id, name, group_id, group, label, code, type_id, task_id, is_relation=False):
         self.name = name
         self.group_id = group_id
         self.group = group
         self.label = label
         self.code = code
         self.type_id = type_id
+        self.task_id = task_id
+        self.is_relation = is_relation
+
+        if task_type_id == TaskType.GENERATE_NEW_ID:
+            cursor = get_connection().cursor()
+            cursor.execute("SELECT MAX(ID) + 10 FROM LTN_DEVELOP.TASK_TYPES")
+            result = cursor.fetchone()
+            if result:
+                self.task_type_id = result[0]
+        else:
+            self.task_type_id = task_type_id
+
+    def save(self):
+        cursor = get_connection().cursor()
+        if TaskType.exists(self.task_type_id):
+            cursor.execute('UPDATE LTN_DEVELOP.TASK_TYPES SET ID = ?, LABEL = ?, TYPE_ID = ? '
+                           'WHERE ID = ?',
+                           (self.task_type_id, self.label, self.type_id, self.task_type_id))
+            get_connection().commit()
+        else:
+            cursor.execute('INSERT INTO LTN_DEVELOP.TASK_TYPES (ID, LABEL, TASK_ID, TYPE_ID, RELATION) '
+                           'VALUES (?, ?, ?, ?, ?)',
+                           (self.task_type_id, self.label, self.task_id, self.type_id, self.is_relation))
+            get_connection().commit()
 
     @classmethod
     def by_id(cls, task_type_id):
         TaskType.fail_if_not_exists(task_type_id)
         cursor = get_connection().cursor()
-        cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID '
-                       'FROM LTN_DEVELOP.TYPES t '
-                       'JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID '
+        cursor.execute('SELECT tt.ID, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, CODE, tt.TASK_ID, tt.RELATION '
+                       'FROM LTN_DEVELOP.TASK_TYPES tt '
+                       'LEFT OUTER JOIN LTN_DEVELOP.TYPES t ON t.ID = tt.TYPE_ID '
                        'WHERE tt.ID = ?', (task_type_id,))
         row = cursor.fetchone()
-        return TaskType(row[6], row[1], row[2], row[3], row[4], row[0], row[5])
+        return TaskType(*row)
 
     @classmethod
     def exists(cls, task_type_id):
+        if task_type_id is None:
+            return False
         cursor = get_connection().cursor()
         cursor.execute("SELECT COUNT(*) FROM LTN_DEVELOP.TASK_TYPES WHERE ID = ?", (task_type_id,))
         return cursor.fetchone()[0] != 0
@@ -84,8 +111,8 @@ def manage_task_type(type_id):
     cursor = get_connection().cursor()
     if request.method == 'GET':
         cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID '
-                       'FROM LTN_DEVELOP.TYPES t '
-                       'JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID '
+                       'FROM LTN_DEVELOP.TASK_TYPES tt '
+                       'LEFT OUTER JOIN LTN_DEVELOP.TYPES t ON t.ID = tt.TYPE_ID '
                        'WHERE tt.ID = ?', (type_id,))
         row = cursor.fetchone()
         if row:
@@ -95,22 +122,15 @@ def manage_task_type(type_id):
     elif request.method == 'PUT':
         req = request.get_json()
         updated_type = req.get('type')
-        cursor.execute('SELECT ID FROM LTN_DEVELOP.TASK_TYPES WHERE ID = ?', (type_id,))
-        already_existing = cursor.fetchone()
-        if already_existing:
-            cursor.execute('UPDATE LTN_DEVELOP.TASK_TYPES SET ID = ?, LABEL = ?, TYPE_ID = ? '
-                           'WHERE ID = ?',
-                           (updated_type.get('id'), updated_type.get('label'), updated_type.get('type_id'), type_id))
-            get_connection().commit()
-            return 'UPDATED', 200
+        task_id = req.get('task')
+        is_relation = req.get('relation')
+        if TaskType.exists(type_id):
+            return_value = 'UPDATED', 200
         else:
-            task_id = req.get('task')
-            is_relation = req.get('relation')
-            cursor.execute('INSERT INTO LTN_DEVELOP.TASK_TYPES (LABEL, TASK_ID, TYPE_ID, RELATION) '
-                           'VALUES (?, ?, ?, ?)',
-                           (updated_type.get('label'), task_id, updated_type.get('type_id'), is_relation))
-            get_connection().commit()
-            return 'CREATED', 200
+            return_value = 'CREATED', 200
+        TaskType(updated_type.get('id'), None, None, None, updated_type.get('label'), None,
+                 updated_type.get('type_id'), task_id, is_relation).save()
+        return return_value
     elif request.method == 'DELETE':
         cursor.execute('DELETE FROM LTN_DEVELOP.TASK_TYPES WHERE ID = ?', (type_id,))
         get_connection().commit()
@@ -131,8 +151,8 @@ def get_task_types(task_id, relation):
     cursor = get_connection().cursor()
     relation_flag = int(relation)
     cursor.execute('SELECT CODE, NAME, GROUP_ID, "GROUP", "LABEL", t.ID, tt.ID '
-                   'FROM LTN_DEVELOP.TYPES t '
-                   'JOIN LTN_DEVELOP.TASK_TYPES tt ON t.ID = tt.TYPE_ID '
+                   'FROM LTN_DEVELOP.TASK_TYPES tt '
+                   'LEFT OUTER JOIN LTN_DEVELOP.TYPES t ON t.ID = tt.TYPE_ID '
                    'WHERE tt.TASK_ID = ? AND tt.RELATION = ? '
                    'ORDER BY "GROUP" DESC', (task_id, relation_flag))
     types = list()
